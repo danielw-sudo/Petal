@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Production Build Output
+dist/
+
+# Astro Cache & Types
+.astro/
+
+# Wrangler Local State / Cache
+.wrangler/
+
+# Env & Local secrets
+.env
+.env.local
+.env.production
+.dev.vars
+
+# Instance-specific deployment config (use wrangler.toml.example as template)
+wrangler.toml
+
+# IDE & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Agent / Tool Files
+.antigravity/
+.claude/
+context.md
+ref-css.md
+claude.md
+PLAN.md
+plan.md
+
+# Dev session artifacts (internal only)
+DEVLOG.md
+DEVLOG_ARCHIVE.md
+
+# Seed corpus (reference only — not runtime code)
+src/lib/corpus.ts
+
+# References
+awesome_prompts/

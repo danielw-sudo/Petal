@@ -1,0 +1,104 @@
+---
+// PromptInput.astro
+---
+<div class="panel">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px;">
+    <h2 class="section-title" style="border:none; margin:0; padding:0; display:flex; align-items:center; gap:8px;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles"><path d="M12 3v16"/><path d="M5 12h14"/><path d="m15 5-3-3-3 3"/><path d="m9 19 3 3 3-3"/></svg>
+      Input prompt to Refactor
+    </h2>
+    <button id="refactor-btn" class="btn btn-primary" aria-label="Refactor" title="Refactor prompt into modules" style="padding: 8px 12px; line-height:1;">
+      <span id="refactor-icon"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg></span>
+      <span id="refactor-spinner" class="loader-spinner" style="display:none;width:16px;height:16px;border-width:2px;flex-shrink:0;"></span>
+    </button>
+  </div>
+
+  <textarea 
+    id="raw-prompt-input" 
+    class="text-area" 
+    placeholder="A beautiful fantasy forest path, photography, volumetric lighting, epic landscape shot, octane render, photorealistic, 8k, rule of thirds composition, morning mist, mystical vibes, avoid ugly trees..."
+  ></textarea>
+</div>
+
+<script>
+  import { refactorPrompt, getStoredApiKey } from "../api";
+  import { parseRawTextToContextFallback, sanitizeInput, tryLocalParse } from "../lib/validator";
+  import { serializeContextToText, isContextRichEnough } from "../lib/serializer";
+
+  const refactorBtn    = document.getElementById("refactor-btn")       as HTMLButtonElement;
+  const refactorIcon   = document.getElementById("refactor-icon")     as HTMLSpanElement;
+  const refactorSpinner = document.getElementById("refactor-spinner") as HTMLSpanElement;
+  const inputEl        = document.getElementById("raw-prompt-input")  as HTMLTextAreaElement;
+
+  function setRefactorLoading(loading: boolean) {
+    refactorBtn.disabled       = loading;
+    refactorIcon.style.display  = loading ? "none" : "";
+    refactorSpinner.style.display = loading ? "inline-block" : "none";
+  }
+
+  refactorBtn?.addEventListener("click", async () => {
+    const rawText = inputEl.value.trim();
+    if (!rawText) return;
+
+    const cleanText = sanitizeInput(rawText);
+    if (!cleanText) return;
+
+    setRefactorLoading(true);
+
+    const userKey = getStoredApiKey() || undefined;
+
+    // ── SCRIPT ──────────────────────────────────────────────────────────────
+    // Deterministic local parse: handles JSON (nested/flat/shell-escaped),
+    // YAML/KV, and CAPS section-header formats.
+    const scriptContext = tryLocalParse(cleanText);
+
+    // ── HOOK ────────────────────────────────────────────────────────────────
+    // If script produced a rich enough context, serialize it to clean flat text
+    // and send to the skill in "enrich" mode — Mistral gets one focused task.
+    // If script came up empty, send the raw text in "parse" mode as before.
+    let skillPrompt: string;
+    let skillMode: "parse" | "enrich";
+
+    if (scriptContext && isContextRichEnough(scriptContext)) {
+      skillPrompt = serializeContextToText(scriptContext);
+      skillMode = "enrich";
+    } else {
+      skillPrompt = cleanText;
+      skillMode = "parse";
+    }
+
+    // ── SKILL ────────────────────────────────────────────────────────────────
+    // Mistral receives clean, focused input regardless of original format.
+    const result = await refactorPrompt(skillPrompt, userKey, skillMode);
+
+    if (result.success && result.context) {
+      window.dispatchEvent(new CustomEvent("prompt-refactored", {
+        detail: result.context
+      }));
+      window.dispatchEvent(new CustomEvent("show-toast", {
+        detail: {
+          message: skillMode === "enrich"
+            ? "Structured input parsed & enriched by Mistral!"
+            : "Prompt successfully modularized!",
+          type: "success"
+        }
+      }));
+    } else {
+      // Skill failed — fall back to script context if available, else heuristic
+      const fallbackContext = scriptContext ?? parseRawTextToContextFallback(cleanText);
+      window.dispatchEvent(new CustomEvent("prompt-refactored", {
+        detail: fallbackContext
+      }));
+      window.dispatchEvent(new CustomEvent("show-toast", {
+        detail: {
+          message: result.error === "RATE_LIMIT_EXCEEDED"
+            ? "Rate limit hit — using local parse as fallback."
+            : "Mistral unavailable — local parse applied.",
+          type: "error"
+        }
+      }));
+    }
+
+    setRefactorLoading(false);
+  });
+</script>

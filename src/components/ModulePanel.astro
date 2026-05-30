@@ -1,0 +1,299 @@
+---
+// ModulePanel.astro
+// Single select dropdown UI for prompt modular remix workspace
+---
+<div class="panel" style="flex: 1; display: flex; flex-direction: column;">
+  <!-- Outer card header -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px;">
+    <h2 class="section-title" style="border:none; margin:0; padding:0; display:flex; align-items:center; gap:8px;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sliders-horizontal"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
+      Select Module to Edit
+    </h2>
+    <button id="randomize-btn" class="btn btn-secondary" style="font-size:0.85rem; padding: 6px 12px;" disabled>
+      🎲 Shuffle Unlocked
+    </button>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 16px;">
+    <!-- Selector Dropdown + Controls on one single compact row -->
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <div class="select-wrapper" style="flex: 1;">
+        <select id="workspace-module-select">
+          <option value="subject">Core Subject</option>
+          <option value="clothing">Clothing & Accessories</option>
+          <option value="scene">Scene & Background</option>
+          <option value="pose">Pose & Activity</option>
+          <option value="lighting">Lighting</option>
+          <option value="composition">Composition & Angle</option>
+          <option value="style">Style & Medium</option>
+          <option value="mood">Atmosphere & Mood</option>
+          <option value="technical">Technical Specs</option>
+          <option value="reference">Reference Image</option>
+          <option value="constraints">Constraints</option>
+        </select>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <!-- Lock option -->
+        <button id="selected-lock-btn" class="lock-btn" title="Lock module during randomization" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:1.1rem; padding: 2px;">
+          🔓
+        </button>
+        <!-- Weight badge/indicator -->
+        <span id="selected-weight-badge" style="font-size: 0.75rem; color: var(--text-secondary); border: 1px solid var(--panel-border); padding: 2px 6px; border-radius: 4px;">
+          w: --
+        </span>
+        <!-- Enable Toggle -->
+        <label class="toggle-switch" style="margin-bottom: 0;">
+          <input type="checkbox" id="selected-toggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Active editor content (No nested card border/background frame) -->
+    <div id="module-editor-content" style="display: flex; flex-direction: column; gap: 12px; transition: opacity 0.3s ease;">
+      <input type="text" id="selected-input" class="module-input" placeholder="Select a module above..." />
+      
+      <div class="options-cloud" id="selected-options-cloud">
+        <!-- Alternative chips loaded here -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .lock-btn {
+    transition: transform 0.2s ease;
+  }
+  .lock-btn:hover {
+    transform: scale(1.1);
+  }
+  .lock-btn.locked {
+    color: var(--accent-magenta) !important;
+  }
+</style>
+
+<script>
+  import type { PromptContext, PromptModule } from "../types/prompt";
+  import { reconstructPrompt } from "../lib/reconstructor";
+
+  let activeContext: PromptContext | null = null;
+  let selectedModuleId = "subject";
+
+  const moduleIds = ["subject", "clothing", "scene", "pose", "lighting", "composition", "style", "mood", "technical", "reference", "constraints"];
+
+  const moduleLabels: Record<string, string> = {
+    subject:     "Core Subject",
+    clothing:    "Clothing & Accessories",
+    scene:       "Scene & Background",
+    pose:        "Pose & Activity",
+    lighting:    "Lighting",
+    composition: "Composition & Angle",
+    style:       "Style & Medium",
+    mood:        "Atmosphere & Mood",
+    technical:   "Technical Specs",
+    reference:   "Reference Image",
+    constraints: "Constraints"
+  };
+
+  const selector = document.getElementById("workspace-module-select") as any;
+  const lockBtn = document.getElementById("selected-lock-btn") as any;
+  const weightBadge = document.getElementById("selected-weight-badge") as any;
+  const toggle = document.getElementById("selected-toggle") as any;
+  const input = document.getElementById("selected-input") as any;
+  const optionsCloud = document.getElementById("selected-options-cloud") as any;
+  const editorContent = document.getElementById("module-editor-content") as any;
+  const shuffleBtn = document.getElementById("randomize-btn") as any;
+
+  // Initialize workspace when prompt is refactored
+  window.addEventListener("prompt-refactored", (e: any) => {
+    activeContext = e.detail as PromptContext;
+    setupWorkspace();
+  });
+
+  function setupWorkspace() {
+    if (!activeContext) return;
+
+    if (shuffleBtn) shuffleBtn.disabled = false;
+
+    // Enable selectors and inputs
+    if (selector) selector.disabled = false;
+    if (toggle) toggle.disabled = false;
+    if (input) input.disabled = false;
+    if (lockBtn) lockBtn.disabled = false;
+
+    // Load active module view
+    renderSelectedModule();
+    triggerRecompile();
+  }
+
+  function initializeBlankContext() {
+    activeContext = {
+      subject:     { id: "subject",     label: "Core Subject",          value: "", locked: false, weight: 1.0,  alternatives: [] },
+      clothing:    { id: "clothing",    label: "Clothing & Accessories", value: "", locked: false, weight: 0.95, alternatives: [] },
+      scene:       { id: "scene",       label: "Scene & Background",     value: "", locked: false, weight: 0.85, alternatives: [] },
+      pose:        { id: "pose",        label: "Pose & Activity",        value: "", locked: false, weight: 0.8,  alternatives: [] },
+      lighting:    { id: "lighting",    label: "Lighting",               value: "", locked: false, weight: 0.75, alternatives: [] },
+      composition: { id: "composition", label: "Composition & Angle",    value: "", locked: false, weight: 0.7,  alternatives: [] },
+      style:       { id: "style",       label: "Style & Medium",         value: "", locked: false, weight: 0.65, alternatives: [] },
+      mood:        { id: "mood",        label: "Atmosphere & Mood",      value: "", locked: false, weight: 0.5,  alternatives: [] },
+      technical:   { id: "technical",   label: "Technical Specs",        value: "", locked: false, weight: 0.3,  alternatives: [] },
+      reference:   { id: "reference",   label: "Reference Image",        value: "", locked: true,  weight: 0.0,  alternatives: [] },
+      constraints: { id: "constraints", label: "Constraints",            value: "", locked: false, weight: 0.1,  alternatives: [] },
+      raw: "",
+      metadata: {
+        schemaVersion: "2026.05.26",
+        targetModel: "zimage",
+        createdAt: new Date().toISOString(),
+        remixCount: 0
+      }
+    };
+    
+    // Enable controls
+    if (selector) selector.disabled = false;
+    if (toggle) toggle.disabled = false;
+    if (input) input.disabled = false;
+    if (lockBtn) lockBtn.disabled = false;
+    if (shuffleBtn) shuffleBtn.disabled = false;
+
+    renderSelectedModule();
+    triggerRecompile();
+  }
+
+  function renderSelectedModule() {
+    if (!activeContext) return;
+
+    const mod = activeContext[selectedModuleId as keyof Omit<PromptContext, 'raw' | 'metadata' | 'remixedOutput'>] as PromptModule;
+    if (!mod) return;
+
+    // Value & Status
+    if (input) {
+      input.value = mod.value || "";
+      input.placeholder = `Enter ${moduleLabels[selectedModuleId]?.toLowerCase() || "value"}...`;
+    }
+    if (weightBadge) weightBadge.textContent = `w: ${mod.weight.toFixed(1)}`;
+    
+    // Toggle
+    if (toggle) {
+      toggle.checked = mod.enabled !== false;
+      updateCardDisabledState(toggle.checked);
+    }
+
+    // Lock
+    if (lockBtn) {
+      lockBtn.innerHTML = mod.locked ? "🔒" : "🔓";
+      lockBtn.className = `lock-btn ${mod.locked ? 'locked' : ''}`;
+    }
+
+    // Alternatives Options Cloud
+    if (optionsCloud) {
+      optionsCloud.innerHTML = "";
+      const alternatives = mod.alternatives || [];
+      alternatives.forEach((alt) => {
+        const chip = document.createElement("span");
+        chip.className = `option-chip ${alt === mod.value ? "active" : ""}`;
+        chip.textContent = alt;
+        chip.addEventListener("click", () => {
+          if (input) input.value = alt;
+          optionsCloud.querySelectorAll(".option-chip").forEach((c: any) => c.classList.remove("active"));
+          chip.classList.add("active");
+          updateModuleValue(alt);
+        });
+        optionsCloud.appendChild(chip);
+      });
+    }
+  }
+
+  function updateCardDisabledState(enabled: boolean) {
+    if (!editorContent) return;
+    if (enabled) {
+      editorContent.style.opacity = "1";
+      if (input) input.disabled = false;
+    } else {
+      editorContent.style.opacity = "0.4";
+      if (input) input.disabled = true;
+    }
+  }
+
+  function updateModuleValue(value: string) {
+    if (!activeContext) return;
+    const mod = activeContext[selectedModuleId as keyof Omit<PromptContext, 'raw' | 'metadata' | 'remixedOutput'>] as PromptModule;
+    if (mod) {
+      mod.value = value;
+      // Highlighting corresponding chip
+      if (optionsCloud) {
+        optionsCloud.querySelectorAll(".option-chip").forEach((chip: any) => {
+          if (chip.textContent === value) {
+            chip.classList.add("active");
+          } else {
+            chip.classList.remove("active");
+          }
+        });
+      }
+      triggerRecompile();
+    }
+  }
+
+  function triggerRecompile() {
+    if (!activeContext) return;
+    const { positive } = reconstructPrompt(activeContext);
+    activeContext.remixedOutput = positive;
+
+    window.dispatchEvent(new CustomEvent("prompt-compiled", {
+      detail: activeContext
+    }));
+  }
+
+  // Bind Selector change listener
+  selector?.addEventListener("change", () => {
+    selectedModuleId = selector.value;
+    renderSelectedModule();
+  });
+
+  // Bind Input field key-in listener
+  input?.addEventListener("input", () => {
+    updateModuleValue(input.value);
+  });
+
+  // Bind Toggle switch listener
+  toggle?.addEventListener("change", () => {
+    if (!activeContext) return;
+    const mod = activeContext[selectedModuleId as keyof Omit<PromptContext, 'raw' | 'metadata' | 'remixedOutput'>] as PromptModule;
+    if (mod) {
+      mod.enabled = toggle.checked;
+      updateCardDisabledState(toggle.checked);
+      triggerRecompile();
+    }
+  });
+
+  // Bind Lock/Unlock button listener
+  lockBtn?.addEventListener("click", () => {
+    if (!activeContext) return;
+    const mod = activeContext[selectedModuleId as keyof Omit<PromptContext, 'raw' | 'metadata' | 'remixedOutput'>] as PromptModule;
+    if (mod) {
+      mod.locked = !mod.locked;
+      lockBtn.innerHTML = mod.locked ? "🔒" : "🔓";
+      lockBtn.className = `lock-btn ${mod.locked ? 'locked' : ''}`;
+    }
+  });
+
+  // Bind Shuffle/Randomize button listener
+  shuffleBtn?.addEventListener("click", () => {
+    if (!activeContext) return;
+
+    moduleIds.forEach((id) => {
+      const mod = activeContext![id as keyof Omit<PromptContext, 'raw' | 'metadata' | 'remixedOutput'>] as PromptModule;
+      if (mod.locked || !mod.alternatives || mod.alternatives.length === 0) return;
+
+      const randomVal = mod.alternatives[Math.floor(Math.random() * mod.alternatives.length)];
+      mod.value = randomVal;
+    });
+
+    activeContext.metadata.remixCount++;
+    renderSelectedModule();
+    triggerRecompile();
+  });
+
+  // Run on load to avoid dead section
+  initializeBlankContext();
+</script>

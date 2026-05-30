@@ -1,0 +1,25 @@
+---
+// Header.astro — shared site header with auto-active nav
+const { pathname } = Astro.url;
+const isWorkspace = pathname === "/";
+const isFactory   = pathname.startsWith("/factory");
+const isLibrary   = pathname.startsWith("/library");
+---
+<header>
+  <a href="/" class="brand">
+    <div class="brand-icon">
+      <img src="/icons/icon-96x96.png" alt="PetalGen logo" />
+    </div>
+    <span class="brand-name">PetalGen</span>
+  </a>
+
+  <nav class="site-nav">
+    <a href="/"        class:list={["nav-link", { active: isWorkspace }]}>Workspace</a>
+    <a href="/factory" class:list={["nav-link", { active: isFactory }]}>Factory</a>
+    <a href="/library" class:list={["nav-link", { active: isLibrary }]}>Library</a>
+  </nav>
+
+  <div class="header-right">
+    <slot />
+  </div>
+</header>

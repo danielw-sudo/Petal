@@ -1,0 +1,721 @@
+---
+import { env } from "cloudflare:workers";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import "../styles/global.css";
+
+export const prerender = false;
+
+const db = (env as any).D1_DATABASE;
+let totalPrompts = 0, totalTokens = 0;
+let categoriesList: {token: string; count: number}[] = [];
+let tokenCategoriesMap: Record<string, {value: string; frequency: number}[]> = {};
+
+const MOCK: typeof tokenCategoriesMap = {
+  "Subject": [
+    { value: "Young adult Asian woman, confident expression, glossy skin", frequency: 12 },
+    { value: "Female anime character, long dark hair, shy hesitant gesture", frequency: 8 },
+    { value: "Korean woman, soft features, melancholy expression", frequency: 6 },
+    { value: "Young woman, early 20s, platinum blonde hair, doe eyes", frequency: 5 },
+  ],
+  "Style": [
+    { value: "Luxury glossy realism, hyper-detailed cinematic photography", frequency: 14 },
+    { value: "Hyperrealistic anime portrait, high contrast rendering", frequency: 9 },
+    { value: "35mm analog film grain, Kodak Portra 400", frequency: 7 },
+    { value: "Early-2000s digital camera aesthetic, subtle grain", frequency: 5 },
+    { value: "DSLR fashion editorial, vivid cinematic color grade", frequency: 4 },
+  ],
+  "Lighting": [
+    { value: "Neon city lighting, glossy sporty highlights, luxury contrast", frequency: 11 },
+    { value: "Narrow beam spotlight, sharp dramatic falloff, deep darkness", frequency: 9 },
+    { value: "Deep amber late golden hour, warm melancholy quality", frequency: 7 },
+    { value: "Harsh super-flash, bright blown-out highlights, retro fill", frequency: 6 },
+  ],
+  "Scene": [
+    { value: "Luxury rooftop tennis court at night, city skyline, neon reflections", frequency: 8 },
+    { value: "Quiet classroom, end of day, golden light from large window", frequency: 7 },
+    { value: "Completely black background, no environment detail", frequency: 9 },
+    { value: "Nostalgic early-2000s bedroom, CD player, pop posters", frequency: 5 },
+  ],
+  "Clothing": [
+    { value: "Deep-red luxury tennis outfit, fitted sporty dress, premium fabric", frequency: 7 },
+    { value: "Sage green linen button-down, high-waisted rust wide-leg trousers", frequency: 5 },
+    { value: "Yellow BANANA crop tee, white tennis skort, black cap worn backwards", frequency: 4 },
+    { value: "Black long-sleeve knit sweater, body in darkness", frequency: 6 },
+  ],
+  "Mood": [
+    { value: "Bold, luxury, sporty nightlife energy, modern feminine confidence", frequency: 10 },
+    { value: "Dark, moody, dramatic, mysterious atmosphere", frequency: 8 },
+    { value: "Quietly devastating, time passing without drama", frequency: 6 },
+    { value: "Nostalgic, playful, authentic 2000s energy", frequency: 5 },
+  ],
+  "Composition": [
+    { value: "Single vertical image, clean cinematic portrait framing", frequency: 9 },
+    { value: "Face centered in spotlight, body dissolves into black, tight frame", frequency: 7 },
+    { value: "Medium distance, mid-thigh up, shallow depth of field", frequency: 6 },
+  ],
+  "Technical": [
+    { value: "Ultra realistic 4K, natural skin texture, realistic neon reflections", frequency: 11 },
+    { value: "High contrast, sharp spotlight edges, hyperrealistic rendering", frequency: 8 },
+    { value: "Kodak Portra 400 grain, shallow DOF, Portra earth tone grading", frequency: 6 },
+    { value: "iPhone camera quality, natural grain, 9:16 vertical aspect ratio", frequency: 4 },
+  ],
+  "Reference": [
+    { value: "Use the uploaded image to constrain the facial features", frequency: 8 },
+    { value: "Use my photo as the face reference, keep the likeness", frequency: 7 },
+    { value: "Use the reference image to guide the overall composition and pose", frequency: 5 },
+    { value: "Use the reference image to constrain the character likeness", frequency: 5 },
+    { value: "Use the reference image to guide the overall style and color palette", frequency: 4 },
+    { value: "Use the uploaded image as a loose style reference", frequency: 3 },
+  ],
+};
+
+if (db) {
+  try {
+    const cp = await db.prepare("SELECT COUNT(*) AS count FROM prompt_logs").first() as any;
+    totalPrompts = cp?.count ?? 0;
+    const ct = await db.prepare("SELECT COUNT(*) AS count FROM harvested_tokens WHERE TRIM(value) != ''").first() as any;
+    totalTokens = ct?.count ?? 0;
+    // Normalise token casing: UPPER(TRIM()) collapses "Style"/"STYLE"/"style" → "STYLE".
+    // COUNT(DISTINCT value) shows real unique-option count; HAVING >= 2 drops single-value noise.
+    const cats = await db.prepare(
+      "SELECT UPPER(TRIM(token)) AS token, COUNT(DISTINCT value) AS count FROM harvested_tokens WHERE TRIM(value) != '' GROUP BY UPPER(TRIM(token)) HAVING COUNT(DISTINCT value) >= 2 ORDER BY COUNT(DISTINCT value) DESC"
+    ).all();
+    categoriesList = (cats.results ?? []) as any[];
+    const toks = await db.prepare(
+      "SELECT UPPER(TRIM(token)) AS token, value, COUNT(*) AS frequency FROM harvested_tokens WHERE TRIM(value) != '' GROUP BY UPPER(TRIM(token)), value ORDER BY UPPER(TRIM(token)), frequency DESC"
+    ).all();
+    ((toks.results ?? []) as any[]).forEach((r: any) => {
+      const k = r.token.trim(); // already UPPER from SQL
+      if (!tokenCategoriesMap[k]) tokenCategoriesMap[k] = [];
+      tokenCategoriesMap[k].push({ value: r.value, frequency: r.frequency });
+    });
+  } catch (e) { console.error("Factory D1 error:", e); }
+}
+
+if (totalPrompts === 0) {
+  totalPrompts = 0; totalTokens = 0;
+  tokenCategoriesMap = MOCK;
+  categoriesList = Object.keys(MOCK).map(t => ({ token: t, count: MOCK[t].length }));
+}
+---
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PetalGen — Prompt Factory</title>
+  <meta name="description" content="Browse harvested tokens by category and craft prompts from scratch." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://petalgen.tools4all.ai/factory" />
+  <meta property="og:title" content="PetalGen — Token Factory" />
+  <meta property="og:description" content="Browse harvested prompt tokens and compose recipes. Powered by Pollinations.ai." />
+  <meta property="og:image" content="https://petalgen.tools4all.ai/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="PetalGen — Token Factory" />
+  <meta name="twitter:description" content="Browse harvested prompt tokens and compose recipes. Powered by Pollinations.ai." />
+  <meta name="twitter:image" content="https://petalgen.tools4all.ai/og.png" />
+  <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96x96.png" />
+  <link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
+  <link rel="manifest" href="/site.webmanifest" /><meta name="theme-color" content="#fdf8f1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <Header>
+    <span class="pollen-badge" style="background:#dceee0;border-color:#86c990;color:#1a5e2a;">🔬 Tokenizing</span>
+  </Header>
+
+  <main class="factory-main">
+    <div class="factory-split">
+      <!-- LEFT: Token Browser -->
+      <div class="factory-left">
+        <div class="panel token-browser">
+          <div class="crate-heading">
+            <h2 class="section-title" style="margin-bottom:0;border:none;">📦 Token Crate</h2>
+            <span class="browser-hint">click a value to slot it into your recipe →</span>
+            {totalPrompts > 0 && <span class="crate-stats">{totalPrompts} prompts · {totalTokens} indexed · {categoriesList.length} cats</span>}
+          </div>
+          <div class="category-list" id="cat-list">
+            {categoriesList.map((cat) => (
+              <div class="cat-card" data-cat={cat.token}>
+                <button class="cat-header" type="button">
+                  <span class="cat-chevron">▶</span>
+                  <span class="cat-name">{cat.token}</span>
+                  <span class="cat-count">{cat.count} values</span>
+                </button>
+                <div class="cat-body">
+                  {(tokenCategoriesMap[cat.token] || [])
+                    .filter(v => v.value && v.value.trim().length > 1)
+                    .map((v) => (
+                      <button class="value-chip" type="button" data-cat={cat.token} data-value={v.value}>
+                        <span class="chip-text">{v.value}</span>
+                        <span class="chip-freq">{v.frequency}×</span>
+                      </button>
+                    ))
+                  }
+                  <div class="custom-value-row">
+                    <input type="text" class="custom-value-input" placeholder="Custom value…" data-cat={cat.token} />
+                    <button class="custom-value-use" type="button" data-cat={cat.token}>Use →</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <!-- ── Custom Token Card ─────────────────────────── -->
+            <div class="cat-card cat-custom" id="custom-token-card">
+              <button class="cat-header" type="button">
+                <span class="cat-chevron">▶</span>
+                <span class="cat-name">＋ Custom Token</span>
+                <span class="cat-count">define your own</span>
+              </button>
+              <div class="cat-body">
+                <div class="custom-token-form">
+                  <input id="ct-name" type="text" placeholder="Token name  (e.g. Hair Color)" />
+                  <input id="ct-value" type="text" placeholder="Value  (e.g. platinum blonde)" />
+                  <button type="button" id="custom-token-add" class="custom-value-use" style="width:100%;justify-content:center;">Add to Recipe →</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Recipe Panel -->
+      <div class="factory-right">
+        <div class="panel recipe-panel">
+          <div class="recipe-header">
+            <h2 class="section-title" style="margin:0;border:none;padding:0;">✏️ Prompt Generator</h2>
+            <div style="display:flex;gap:6px;">
+              <button id="autofill-btn" class="btn btn-secondary" style="font-size:0.72rem;padding:5px 9px;">🎲 Auto-fill</button>
+              <button id="clear-btn" class="btn btn-secondary" style="font-size:0.72rem;padding:5px 9px;">🗑 Clear</button>
+            </div>
+          </div>
+          <div class="recipe-slots" id="recipe-slots"></div>
+          <div class="compiled-box" id="recipe-compiled" style="margin-top:14px;min-height:52px;">Craft your recipe using the token library on the left...</div>
+        </div>
+
+        <div class="panel gen-panel">
+          <h2 class="section-title" style="margin-bottom:14px;">⚡ Generate</h2>
+          <div class="gen-row">
+            <div class="select-wrapper" style="flex:1;min-width:0;"><select id="factory-model" disabled>
+              <option value="zimage">Z-Image Turbo</option>
+              <option value="flux">Flux</option>
+            </select></div>
+            <div class="select-wrapper" style="flex:1;min-width:0;"><select id="factory-ratio">
+              <option value="1024x1024|1:1">Square 1:1</option>
+              <option value="768x1024|3:4">Portrait 3:4</option>
+              <option value="576x1024|9:16">Vertical 9:16</option>
+              <option value="1024x768|4:3">Landscape 4:3</option>
+              <option value="1024x576|16:9">Wide 16:9</option>
+            </select></div>
+            <button id="factory-gen-btn" class="btn btn-primary" style="white-space:nowrap;flex-shrink:0;">⚡ Generate</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+            <label class="toggle-switch" style="margin-bottom:0;">
+              <input type="checkbox" id="factory-enhance" />
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);">Enhance</span>
+            <span id="factory-enhance-label" style="font-size:0.78rem;color:var(--text-muted);">Off</span>
+          </div>
+          <div style="margin-top:10px;border:1px solid var(--panel-border);border-radius:var(--radius-sm);padding:10px;background:var(--bg-inset);">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);">Reference Image</span>
+              <span id="factory-ref-hint" style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">upload to enable</span>
+            </div>
+            <input type="file" id="factory-ref-file" accept="image/jpeg,image/png,image/webp" style="font-size:0.78rem;width:100%;color:var(--text-primary);" />
+            <div id="factory-ref-panel" style="display:none;margin-top:8px;">
+              <p id="factory-ref-instr-preview" style="font-size:0.7rem;color:var(--accent-plant);margin-bottom:8px;line-height:1.4;"></p>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <label style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);flex-shrink:0;">Strength</label>
+                <input type="range" id="factory-ref-strength" min="0" max="1" step="0.05" value="0.75" style="flex:1;accent-color:var(--accent-plant);" />
+                <span id="factory-ref-strength-val" style="font-size:0.78rem;color:var(--text-primary);width:28px;text-align:right;">0.75</span>
+              </div>
+              <p style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">0.1–0.3 preserve · 0.4–0.6 balanced · 0.7–1.0 reimagine</p>
+              <p id="factory-ref-model-compat" style="display:none;font-size:0.68rem;color:var(--accent-terracotta);margin-top:6px;line-height:1.5;">⚠ Face / identity preservation requires <strong>Kontext</strong> or <strong>GPT Image</strong>. Current model uses the reference loosely for style/composition only.</p>
+            </div>
+          </div>
+          <div class="factory-viewport" id="factory-viewport">
+            <div id="factory-placeholder" class="viewport-placeholder">
+              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+              <p>Recipe renders here</p>
+            </div>
+            <div class="loader-overlay" id="factory-loader" style="display:none;">
+              <div class="loader-spinner"></div><p class="loader-text">Rendering...</p>
+            </div>
+            <img id="factory-image" class="viewport-image" alt="Generated" />
+          </div>
+          <div id="factory-meta" style="display:none;" class="gen-meta">
+            <span id="factory-seed" class="seed-text"></span>
+            <div style="display:flex;gap:6px;">
+              <button id="factory-save-gallery" class="btn btn-primary" style="font-size:0.72rem;padding:5px 9px;">💾 Gallery</button>
+              <a id="factory-dl" class="btn btn-secondary" style="font-size:0.72rem;padding:5px 9px;" download="petalgen-factory.jpg">⬇ Download</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <Footer />
+  <div id="token-data" data-tokens={JSON.stringify(tokenCategoriesMap)} style="display:none;"></div>
+  <div id="app-toast" class="toast"></div>
+
+<style is:global>
+.factory-main { max-width: 1400px; margin: 28px auto; padding: 0 24px; display: flex; flex-direction: column; gap: 20px; }
+.crate-stats { font-size: 0.68rem; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+.factory-split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+@media (max-width: 1100px) { .factory-split { grid-template-columns: 1fr; } }
+.factory-left .panel, .factory-right { display: flex; flex-direction: column; gap: 20px; }
+.token-browser { padding: 20px; }
+.crate-heading { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.browser-hint { font-size: 0.75rem; color: var(--text-muted); }
+.category-list { display: flex; flex-direction: column; gap: 8px; }
+.cat-card { border: 2px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; transition: var(--transition-smooth); }
+.cat-card:hover { box-shadow: 3px 3px 0 var(--border-strong); }
+.cat-header {
+  width: 100%; padding: 11px 14px; background: var(--bg-card); border: none; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; text-align: left; transition: var(--transition-smooth);
+}
+.cat-header:hover { background: var(--bg-inset); }
+.cat-chevron { font-size: 0.6rem; color: var(--text-muted); transition: transform 0.18s ease; flex-shrink: 0; }
+.cat-card.open .cat-chevron { transform: rotate(90deg); }
+.cat-name { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-primary); flex: 1; }
+.cat-count { font-size: 0.7rem; color: var(--text-secondary); white-space: nowrap; }
+.cat-body { display: none; padding: 10px 12px; border-top: 1px solid var(--panel-border); background: var(--bg-inset); flex-direction: column; gap: 6px; }
+.cat-card.open .cat-body { display: flex; }
+.value-chip {
+  width: 100%; background: var(--bg-card); border: 1px solid var(--panel-border); border-radius: var(--radius-sm);
+  padding: 7px 10px; text-align: left; cursor: pointer; display: flex; justify-content: space-between;
+  align-items: flex-start; gap: 8px; transition: var(--transition-smooth);
+}
+.value-chip:hover { background: var(--accent-plant); border-color: var(--accent-plant); color: #fff; }
+.value-chip:hover .chip-text, .value-chip:hover .chip-freq { color: #fff; }
+.chip-text { font-size: 0.8rem; color: var(--text-primary); line-height: 1.4; flex: 1; }
+.chip-freq { display: none; } /* frequency kept in backend data; hidden from UI */
+.recipe-panel { padding: 20px; }
+.recipe-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.recipe-slots { display: flex; flex-direction: column; gap: 6px; }
+.slot-row { display: flex; align-items: center; gap: 8px; }
+.slot-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); width: 88px; flex-shrink: 0; }
+.slot-value { flex: 1; font-size: 0.8rem; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 3px; padding: 5px 8px; min-height: 28px; line-height: 1.4; word-break: break-word; }
+.slot-value.empty { color: var(--text-muted); font-style: italic; }
+.slot-clear { font-size: 0.7rem; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 2px 5px; flex-shrink: 0; }
+.slot-clear:hover { color: #dc2626; }
+.gen-panel { padding: 20px; }
+.gen-row { display: flex; gap: 8px; align-items: center; }
+.factory-viewport {
+  position: relative; aspect-ratio: 1; background: var(--bg-deep);
+  border: 2px solid var(--border-strong); border-radius: var(--radius-sm);
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+  margin-top: 14px;
+}
+.gen-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+.seed-text { font-size: 0.72rem; color: var(--text-muted); }
+@media (max-width: 640px) {
+  .factory-main { padding: 0 12px; margin: 12px auto; }
+  .gen-row { flex-wrap: wrap; }
+  .gen-row .select-wrapper { flex: 1 1 calc(50% - 4px); }
+  #factory-gen-btn { width: 100%; justify-content: center; margin-top: 2px; }
+}
+
+/* ── Custom value input inside accordion ─────────────────── */
+.custom-value-row { display: flex; gap: 6px; margin-top: 6px; border-top: 1px dashed var(--panel-border); padding-top: 8px; }
+.custom-value-input {
+  flex: 1; font-size: 0.78rem; padding: 5px 9px;
+  border: 1px solid var(--panel-border); border-radius: var(--radius-sm);
+  background: var(--bg-card); color: var(--text-primary);
+  outline: none;
+}
+.custom-value-input:focus { border-color: var(--accent-terracotta); }
+.custom-value-use {
+  font-size: 0.72rem; font-weight: 600; padding: 5px 10px; white-space: nowrap;
+  background: var(--bg-card); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); cursor: pointer; color: var(--text-primary);
+  display: flex; align-items: center; gap: 4px; transition: var(--transition-smooth);
+}
+.custom-value-use:hover { background: var(--accent-terracotta); border-color: var(--accent-terracotta); color: #fff; }
+
+/* ── Custom Token card ───────────────────────────────────── */
+.cat-custom .cat-name { color: var(--accent-plant); }
+.cat-custom { border-style: dashed; }
+.custom-token-form { display: flex; flex-direction: column; gap: 8px; }
+.custom-token-form input {
+  font-size: 0.78rem; padding: 6px 10px;
+  border: 1px solid var(--panel-border); border-radius: var(--radius-sm);
+  background: var(--bg-card); color: var(--text-primary); outline: none; width: 100%;
+}
+.custom-token-form input:focus { border-color: var(--accent-plant); }
+
+/* ── Custom slots in Recipe Builder ─────────────────────── */
+.custom-slot-row { display: flex; align-items: center; gap: 8px; }
+.custom-slot-tag {
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--accent-plant); background: #dceee0; border-radius: 999px;
+  padding: 1px 7px; white-space: nowrap; flex-shrink: 0;
+}
+</style>
+
+<script>
+  interface TV { value: string; frequency: number; }
+  const tokenMap: Record<string, TV[]> = JSON.parse(
+    document.getElementById("token-data")?.getAttribute("data-tokens") || "{}"
+  );
+
+  const MODULES = [
+    { id: "subject",     label: "Subject",     cats: ["Subject","SUBJECT","CHARACTER","MODEL","CONCEPT"] },
+    { id: "clothing",    label: "Clothing",    cats: ["Clothing","CLOTHING","OUTFIT","COSTUME","FASHION"] },
+    { id: "scene",       label: "Scene",       cats: ["Scene","SCENE","ENVIRONMENT","BACKGROUND","SETTING","LOCATION"] },
+    { id: "pose",        label: "Pose",        cats: ["Pose","Pose/Activity","POSE","ACTIVITY","POSE_CAMERA"] },
+    { id: "lighting",    label: "Lighting",    cats: ["Lighting","LIGHTING"] },
+    { id: "composition", label: "Composition", cats: ["Composition","Perspective","COMPOSITION","FRAMING","CAMERA"] },
+    { id: "style",       label: "Style",       cats: ["Style","STYLE","AESTHETIC","GLOBAL_STYLE","MEDIUM","FORMAT"] },
+    { id: "mood",        label: "Mood",        cats: ["Mood","MOOD","ATMOSPHERE","EMOTION"] },
+    { id: "technical",   label: "Technical",   cats: ["Technical","Tech Parameters","TECHNICAL","EFFECTS","PARAMS","QUALITY"] },
+    { id: "reference",   label: "Ref Image",   cats: ["Reference","REFERENCE","REF_IMAGE","REFERENCE_IMAGE","REF_INSTRUCTION"] },
+    { id: "constraints", label: "Constraints", cats: ["Negative","NEGATIVE","CONSTRAINTS","AVOID","RESTRICTIONS"] },
+  ];
+  const recipe: Record<string, string> = Object.fromEntries(MODULES.map(m => [m.id, ""]));
+  const customRecipe: { token: string; value: string }[] = [];
+
+  // ── Accordion: exclusive expand (one open at a time) ──────────────────────
+  document.querySelectorAll<HTMLElement>(".cat-card").forEach(card => {
+    card.querySelector<HTMLButtonElement>(".cat-header")!
+      .addEventListener("click", () => {
+        const isOpen = card.classList.contains("open");
+        document.querySelectorAll<HTMLElement>(".cat-card").forEach(c => c.classList.remove("open"));
+        if (!isOpen) card.classList.add("open");
+      });
+  });
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function catToModule(catName: string): string | null {
+    const upper = catName.toUpperCase();
+    for (const m of MODULES) {
+      if (m.cats.some(c => c.toUpperCase() === upper)) return m.id;
+    }
+    return null;
+  }
+
+  function slotValue(cat: string, val: string) {
+    const mid = catToModule(cat);
+    if (mid) {
+      recipe[mid] = val;
+      showToast(`${mid} ← set`, "success");
+      if (mid === "reference") {
+        if (factoryRefFile?.files?.[0]) updateFactoryRefPreview();
+      }
+    } else {
+      const existing = customRecipe.find(r => r.token === cat);
+      if (existing) existing.value = val;
+      else customRecipe.push({ token: cat, value: val });
+      showToast(`Custom: ${cat} ← set`, "success");
+    }
+    renderSlots();
+  }
+
+  // ── Value chip click ────────────────────────────────────────────────────────
+  document.querySelectorAll<HTMLButtonElement>(".value-chip").forEach(chip => {
+    chip.addEventListener("click", () => slotValue(chip.dataset.cat || "", chip.dataset.value || ""));
+  });
+
+  // ── Custom value inputs ─────────────────────────────────────────────────────
+  document.querySelectorAll<HTMLElement>(".custom-value-row").forEach(row => {
+    const input = row.querySelector<HTMLInputElement>(".custom-value-input")!;
+    const btn   = row.querySelector<HTMLButtonElement>(".custom-value-use")!;
+    const cat   = btn.dataset.cat || "";
+    const use = () => {
+      const v = input.value.trim();
+      if (!v) return;
+      slotValue(cat, v);
+      input.value = "";
+    };
+    btn.addEventListener("click", use);
+    input.addEventListener("keydown", (e: KeyboardEvent) => { if (e.key === "Enter") use(); });
+  });
+
+  // ── Custom Token card ───────────────────────────────────────────────────────
+  document.getElementById("custom-token-add")!.addEventListener("click", () => {
+    const nameEl  = document.getElementById("ct-name") as HTMLInputElement;
+    const valueEl = document.getElementById("ct-value") as HTMLInputElement;
+    const tok = nameEl.value.trim();
+    const val = valueEl.value.trim();
+    if (!tok || !val) { showToast("Both token name and value are required", "error"); return; }
+    const existing = customRecipe.find(r => r.token === tok);
+    if (existing) existing.value = val;
+    else customRecipe.push({ token: tok, value: val });
+    nameEl.value = ""; valueEl.value = "";
+    showToast(`Custom: ${tok} ← added`, "success");
+    renderSlots();
+  });
+  // Enter on value input triggers add
+  (document.getElementById("ct-value") as HTMLInputElement)
+    .addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") document.getElementById("custom-token-add")!.click();
+    });
+
+  // ── Slots ──────────────────────────────────────────────────────────────────
+  function renderSlots() {
+    const el = document.getElementById("recipe-slots")!;
+    const moduleRows = MODULES.map(m => `
+      <div class="slot-row">
+        <span class="slot-label">${m.label}</span>
+        <span class="slot-value${recipe[m.id] ? "" : " empty"}">${recipe[m.id] || "empty — click a value →"}</span>
+        ${recipe[m.id] ? `<button class="slot-clear" data-id="${m.id}" title="Clear">✕</button>` : ""}
+      </div>`).join("");
+    const customRows = customRecipe.map((r, i) => `
+      <div class="custom-slot-row">
+        <span class="custom-slot-tag">${r.token}</span>
+        <span class="slot-value">${r.value}</span>
+        <button class="slot-clear" data-custom="${i}" title="Clear">✕</button>
+      </div>`).join("");
+    el.innerHTML = moduleRows + customRows;
+    el.querySelectorAll<HTMLButtonElement>(".slot-clear").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.id) { recipe[btn.dataset.id] = ""; }
+        else if (btn.dataset.custom !== undefined) { customRecipe.splice(Number(btn.dataset.custom), 1); }
+        renderSlots();
+      });
+    });
+    updateCompiled();
+  }
+
+  function updateCompiled() {
+    const parts = MODULES
+      .filter(m => m.id !== "constraints" && m.id !== "reference" && recipe[m.id])
+      .map(m => recipe[m.id]);
+    const customs = customRecipe.map(r => r.value);
+    const neg = recipe.constraints;
+    const ref = recipe.reference;
+    const mainText = [...parts, ...customs].join(", ") + (neg ? `. Avoid: ${neg}` : "");
+    const compiled = (ref ? `[Ref: ${ref}] ` : "") + mainText;
+    document.getElementById("recipe-compiled")!.textContent =
+      compiled || "Craft your recipe using the token library on the left...";
+  }
+
+  // ── Auto-fill ──────────────────────────────────────────────────────────────
+  function sampleToken(cats: string[]): string {
+    for (const cat of cats) {
+      const key = Object.keys(tokenMap).find(k => k.toUpperCase() === cat.toUpperCase());
+      if (key) {
+        const list = tokenMap[key].filter(v => v.value?.trim());
+        if (list.length) {
+          const total = list.reduce((s, v) => s + v.frequency, 0);
+          let t = Math.random() * total;
+          for (const item of list) { t -= item.frequency; if (t <= 0) return item.value; }
+          return list[0].value;
+        }
+      }
+    }
+    return "";
+  }
+
+  document.getElementById("autofill-btn")!.addEventListener("click", () => {
+    MODULES.forEach(m => { if (!recipe[m.id]) recipe[m.id] = sampleToken(m.cats); });
+    renderSlots();
+  });
+  document.getElementById("clear-btn")!.addEventListener("click", () => {
+    MODULES.forEach(m => recipe[m.id] = "");
+    customRecipe.length = 0;
+    renderSlots();
+  });
+
+  // Load enabled models from API, fall back to hardcoded options
+  (async () => {
+    const sel = document.getElementById("factory-model") as HTMLSelectElement;
+    try {
+      const res = await fetch("/api/models?type=image");
+      const data = await res.json() as any;
+      if (data.success && data.models?.length) {
+        const saved = localStorage.getItem("petalgen_model") || "zimage";
+        while (sel.options.length > 0) sel.remove(0);
+        for (const m of data.models) {
+          const opt = new Option(m.name, m.id);
+          if (m.id === saved) opt.selected = true;
+          sel.add(opt);
+        }
+      }
+    } catch {}
+    sel.disabled = false;
+    sel.addEventListener("change", () => {
+      localStorage.setItem("petalgen_model", sel.value);
+      updateFactoryRefModelCompat();
+    });
+  })();
+
+  const factoryEnhance = document.getElementById("factory-enhance") as HTMLInputElement;
+  const factoryEnhanceLabel = document.getElementById("factory-enhance-label") as HTMLSpanElement;
+  factoryEnhance?.addEventListener("change", () => {
+    factoryEnhanceLabel.textContent = factoryEnhance.checked ? "On" : "Off";
+  });
+
+  // ── Reference image controls ───────────────────────────────────────────────
+  const factoryRefFile      = document.getElementById("factory-ref-file")         as HTMLInputElement;
+  const factoryRefPanel     = document.getElementById("factory-ref-panel")        as HTMLDivElement;
+  const factoryRefHint      = document.getElementById("factory-ref-hint")         as HTMLSpanElement;
+  const factoryRefStrength  = document.getElementById("factory-ref-strength")     as HTMLInputElement;
+  const factoryRefStrengthV = document.getElementById("factory-ref-strength-val") as HTMLSpanElement;
+  const factoryRefInstrPrev = document.getElementById("factory-ref-instr-preview") as HTMLParagraphElement;
+
+  const factoryRefModelCompat = document.getElementById("factory-ref-model-compat") as HTMLParagraphElement;
+  const IDENTITY_MODELS = new Set(["kontext","gptimage","gptimage-large"]);
+
+  function updateFactoryRefPreview() {
+    const instr = recipe.reference || "use uploaded image as reference";
+    if (factoryRefInstrPrev) factoryRefInstrPrev.textContent = `→ ${instr}`;
+  }
+
+  function updateFactoryRefModelCompat() {
+    if (!factoryRefModelCompat) return;
+    const cur = (document.getElementById("factory-model") as HTMLSelectElement)?.value || "";
+    factoryRefModelCompat.style.display = (factoryRefFile?.files?.[0] && !IDENTITY_MODELS.has(cur)) ? "block" : "none";
+  }
+
+  factoryRefFile?.addEventListener("change", () => {
+    const hasFile = !!factoryRefFile.files?.[0];
+    factoryRefPanel.style.display = hasFile ? "block" : "none";
+    if (factoryRefHint) factoryRefHint.style.display = hasFile ? "none" : "";
+    if (hasFile) { updateFactoryRefPreview(); updateFactoryRefModelCompat(); }
+    else if (factoryRefModelCompat) factoryRefModelCompat.style.display = "none";
+  });
+
+  factoryRefStrength?.addEventListener("input", () => {
+    factoryRefStrengthV.textContent = parseFloat(factoryRefStrength.value).toFixed(2);
+  });
+
+  async function prepareReferenceImage(file: File): Promise<Blob> {
+    const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
+    if (!ALLOWED.includes(file.type)) throw new Error("Reference image must be JPEG, PNG, or WebP.");
+    if (file.size > 20 * 1024 * 1024) throw new Error("Reference image must be under 20MB.");
+    const MAX_DIM = 1024;
+    const bitmap = await createImageBitmap(file);
+    const scale  = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width  * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx    = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+  }
+
+  // ── Generate ───────────────────────────────────────────────────────────────
+  document.getElementById("factory-gen-btn")!.addEventListener("click", async () => {
+    const parts = MODULES.filter(m => m.id !== "constraints" && m.id !== "reference" && recipe[m.id]).map(m => recipe[m.id]);
+    const customs = customRecipe.map(r => r.value);
+    const allParts = [...parts, ...customs];
+    if (allParts.length < 2) { showToast("Add at least 2 values to your recipe first", "error"); return; }
+    const model   = (document.getElementById("factory-model") as unknown as HTMLSelectElement).value;
+    const ratioVal = (document.getElementById("factory-ratio") as unknown as HTMLSelectElement).value;
+    const [dims, aspectRatio] = ratioVal.split("|");
+    const [w, h] = dims.split("x").map(Number);
+
+    const makeM = (id: string, label: string, v: string) =>
+      ({ id, label, value: v, locked: false, weight: 1, alternatives: [] });
+    const ctx: Record<string, unknown> = {
+      subject:     makeM("subject",     "Subject",     recipe.subject     || allParts[0]),
+      lighting:    makeM("lighting",    "Lighting",    recipe.lighting    || "natural lighting"),
+      composition: makeM("composition", "Composition", recipe.composition || "cinematic framing"),
+      style:       makeM("style",       "Style",       recipe.style       || "photorealistic"),
+      mood:        makeM("mood",        "Mood",        recipe.mood        || "neutral"),
+      technical:   makeM("technical",   "Technical",   recipe.technical   || ""),
+      ...(recipe.clothing    && { clothing:    makeM("clothing",    "Clothing",    recipe.clothing) }),
+      ...(recipe.scene       && { scene:       makeM("scene",       "Scene",       recipe.scene) }),
+      ...(recipe.pose        && { pose:        makeM("pose",        "Pose",        recipe.pose) }),
+      ...(recipe.constraints && { constraints: makeM("constraints", "Constraints", recipe.constraints) }),
+      raw: allParts.join(", "),
+      metadata: { schemaVersion: "2026.05.factory", targetModel: model, createdAt: new Date().toISOString(), remixCount: 0 },
+    };
+
+    const loader      = document.getElementById("factory-loader")!;
+    const placeholder = document.getElementById("factory-placeholder")!;
+    const img         = document.getElementById("factory-image") as HTMLImageElement;
+    const meta        = document.getElementById("factory-meta")!;
+    const genBtn      = document.getElementById("factory-gen-btn") as HTMLButtonElement;
+
+    loader.style.display = "flex"; placeholder.style.display = "none";
+    img.style.display = "none"; meta.style.display = "none"; genBtn.disabled = true;
+
+    try {
+      const apiKey = localStorage.getItem("petalgen_api_key") || undefined;
+      const enhance = (document.getElementById("factory-enhance") as HTMLInputElement)?.checked ?? false;
+
+      // Build request: multipart if reference image active, JSON otherwise
+      let fetchBody: BodyInit;
+      const fetchHeaders: Record<string, string> = {};
+      if (apiKey) fetchHeaders["Authorization"] = `Bearer ${apiKey}`;
+
+      const refFileObj = factoryRefFile?.files?.[0];
+      if (refFileObj) {
+        let refBlob: Blob;
+        try {
+          refBlob = await prepareReferenceImage(refFileObj);
+        } catch (e: any) {
+          showToast(e.message || "Invalid reference image", "error");
+          loader.style.display = "none"; placeholder.style.display = "flex"; genBtn.disabled = false;
+          return;
+        }
+        const fd = new FormData();
+        fd.append("context_json", JSON.stringify(ctx));
+        fd.append("width",  String(w));
+        fd.append("height", String(h));
+        fd.append("aspectRatio", aspectRatio);
+        fd.append("enhance", String(enhance));
+        fd.append("strength", factoryRefStrength?.value ?? "0.75");
+        fd.append("reference_image", refBlob, "reference.jpg");
+        fd.append("ref_instruction", recipe.reference || "use uploaded image as reference");
+        fetchBody = fd;
+      } else {
+        fetchHeaders["Content-Type"] = "application/json";
+        fetchBody = JSON.stringify({ context: ctx, width: w, height: h, aspectRatio, enhance });
+      }
+
+      const res = await fetch("/api/generate", { method: "POST", headers: fetchHeaders, body: fetchBody });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({} as any)) as any;
+        showToast(errData.error || `HTTP ${res.status}`, "error");
+        placeholder.style.display = "flex"; loader.style.display = "none"; genBtn.disabled = false;
+        return;
+      }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const logId = res.headers.get("X-Log-ID") || "";
+      const r2Key = res.headers.get("X-R2-Key") || "";
+      const imageUrl = res.headers.get("X-Image-URL") || "";
+      img.src = url; img.className = "viewport-image loaded"; img.style.display = "block";
+      placeholder.style.display = "none";
+      (document.getElementById("factory-dl") as HTMLAnchorElement).href = url;
+      document.getElementById("factory-seed")!.textContent = logId ? `Log: ${logId.slice(0, 8)}` : "";
+      meta.style.display = "flex";
+      const saveBtn = document.getElementById("factory-save-gallery") as HTMLButtonElement;
+      if (saveBtn) {
+        saveBtn.disabled = false; saveBtn.textContent = "💾 Gallery";
+        saveBtn.onclick = async () => {
+          saveBtn.disabled = true; saveBtn.textContent = "Saving...";
+          const compiled = [...allParts].join(", ");
+          const sr = await fetch("/api/save", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ logId: logId || crypto.randomUUID(), promptText: compiled, contextJson: JSON.stringify(ctx), model, width: w, height: h, r2Key, imageUrl }),
+          });
+          const sj = await sr.json() as any;
+          if (sj.success) { saveBtn.textContent = "✓ Saved"; showToast("Saved to Gallery!", "success"); }
+          else { saveBtn.disabled = false; saveBtn.textContent = "💾 Gallery"; showToast(sj.error || "Save failed", "error"); }
+        };
+      }
+    } catch (e: unknown) {
+      showToast((e as Error).message || "Generation failed", "error");
+      placeholder.style.display = "flex";
+    } finally { loader.style.display = "none"; genBtn.disabled = false; }
+  });
+
+  function showToast(msg: string, type: "success" | "error" = "success") {
+    const t = document.getElementById("app-toast")!;
+    t.textContent = msg; t.className = `toast show toast-${type}`;
+    setTimeout(() => t.classList.remove("show"), 3000);
+  }
+
+  renderSlots();
+</script>
+</body>
+</html>

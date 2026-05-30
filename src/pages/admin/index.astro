@@ -1,0 +1,246 @@
+---
+import "../../styles/global.css";
+import { env } from "cloudflare:workers";
+export const prerender = false;
+
+const db = (env as any).D1_DATABASE as D1Database | undefined;
+
+let models: any[] = [], library: any[] = [], logs: any[] = [], limits: any[] = [];
+
+if (db) {
+  try {
+    const mRes = await db.prepare("SELECT model_id, model_type, display_name, description, sort_order, enabled FROM enabled_models ORDER BY model_type, sort_order ASC").all();
+    models = (mRes.results ?? []) as any[];
+
+    const lRes = await db.prepare("SELECT id, prompt_text, model, width, height, image_url, created_at FROM saved_images ORDER BY created_at DESC LIMIT 50").all();
+    library = (lRes.results ?? []) as any[];
+
+    const pRes = await db.prepare("SELECT id, original_prompt, selected_model, created_at FROM prompt_logs ORDER BY created_at DESC LIMIT 50").all();
+    logs = (pRes.results ?? []) as any[];
+
+    const rRes = await db.prepare("SELECT ip_hash, request_count, last_request FROM rate_limits ORDER BY last_request DESC").all();
+    limits = (rRes.results ?? []) as any[];
+  } catch (e) { console.error("Admin D1 error:", e); }
+}
+---
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PetalGen Admin</title>
+  <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96x96.png" />
+  <link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="admin-wrap">
+  <header class="admin-header">
+    <span class="admin-logo">⚙ PetalGen Admin</span>
+    <a href="/" class="btn btn-secondary" style="font-size:0.78rem;padding:5px 12px;">← App</a>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="models">Models <span class="badge">{models.length}</span></button>
+    <button class="tab-btn" data-tab="library">Library <span class="badge">{library.length}</span></button>
+    <button class="tab-btn" data-tab="logs">Logs <span class="badge">{logs.length}</span></button>
+    <button class="tab-btn" data-tab="limits">Rate Limits <span class="badge">{limits.length}</span></button>
+  </nav>
+
+  <!-- Models -->
+  <section id="tab-models" class="tab-pane">
+    <div class="pane-actions">
+      <button id="sync-btn" class="btn btn-secondary">↺ Sync from Pollinations</button>
+      <span id="sync-status" class="status-text"></span>
+    </div>
+    <table class="admin-table">
+      <thead><tr><th>Model ID</th><th>Display Name</th><th>Type</th><th>Description</th><th>Order</th><th>Status</th></tr></thead>
+      <tbody>
+        {models.map(m => (
+          <tr id={`model-${m.model_id}`}>
+            <td><code>{m.model_id}</code></td>
+            <td>{m.display_name}</td>
+            <td><span class="tag">{m.model_type}</span></td>
+            <td style="color:var(--text-secondary);font-size:0.78rem;">{m.description}</td>
+            <td>{m.sort_order}</td>
+            <td>
+              <button
+                class={`toggle-btn ${m.enabled ? "on" : "off"}`}
+                data-id={m.model_id}
+                data-enabled={m.enabled ? "1" : "0"}
+              >{m.enabled ? "✓ On" : "Off"}</button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Library -->
+  <section id="tab-library" class="tab-pane hidden">
+    {library.length === 0 && <p class="empty-note">No saved images yet.</p>}
+    <table class="admin-table">
+      <thead><tr><th>Preview</th><th>Prompt</th><th>Model</th><th>Size</th><th>Date</th><th></th></tr></thead>
+      <tbody>
+        {library.map(img => (
+          <tr id={`lib-${img.id}`}>
+            <td style="width:64px;padding:6px 10px;"><a href={img.image_url} target="_blank"><img src={img.image_url} class="lib-thumb" alt="" loading="lazy" /></a></td>
+            <td style="max-width:280px;"><a href={img.image_url} target="_blank" style="color:var(--accent-terracotta);text-decoration:none;">{(img.prompt_text || "").slice(0, 70)}{img.prompt_text?.length > 70 ? "…" : ""}</a></td>
+            <td><code>{img.model}</code></td>
+            <td style="white-space:nowrap;">{img.width}×{img.height}</td>
+            <td style="white-space:nowrap;font-size:0.75rem;color:var(--text-secondary);">{img.created_at?.slice(0,16)}</td>
+            <td><button class="del-btn" data-type="library" data-id={img.id}>✕</button></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Prompt Logs (read-only audit trail) -->
+  <section id="tab-logs" class="tab-pane hidden">
+    {logs.length === 0 && <p class="empty-note">No prompt logs yet.</p>}
+    <table class="admin-table">
+      <thead><tr><th>Prompt</th><th>Model</th><th>Date</th></tr></thead>
+      <tbody>
+        {logs.map(log => (
+          <tr>
+            <td style="max-width:420px;">{(log.original_prompt || "").slice(0, 120)}{log.original_prompt?.length > 120 ? "…" : ""}</td>
+            <td><code>{log.selected_model}</code></td>
+            <td style="white-space:nowrap;font-size:0.75rem;color:var(--text-secondary);">{new Date(log.created_at * 1000).toISOString().slice(0,16)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Rate Limits -->
+  <section id="tab-limits" class="tab-pane hidden">
+    {limits.length === 0 && <p class="empty-note">No active rate limits.</p>}
+    <table class="admin-table">
+      <thead><tr><th>IP Hash</th><th>Requests</th><th>Last Request</th><th></th></tr></thead>
+      <tbody>
+        {limits.map(r => (
+          <tr id={`limit-${r.ip_hash}`}>
+            <td><code style="font-size:0.75rem;">{r.ip_hash?.slice(0,16)}…</code></td>
+            <td>{r.request_count}</td>
+            <td style="white-space:nowrap;font-size:0.75rem;color:var(--text-secondary);">{new Date(r.last_request * 1000).toISOString().slice(0,16)}</td>
+            <td><button class="del-btn" data-type="limits" data-ip={r.ip_hash}>Clear</button></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<div id="admin-toast" class="toast"></div>
+
+<style>
+.admin-wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px 40px; }
+.admin-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 2px solid var(--border-strong); margin-bottom: 20px; }
+.admin-logo { font-family: 'Press Start 2P', monospace; font-size: 0.7rem; }
+.tab-nav { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border-strong); }
+.tab-btn { padding: 8px 16px; background: none; border: none; font-family: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--text-secondary); border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color 0.15s; display: flex; align-items: center; gap: 6px; }
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active { color: var(--text-primary); border-bottom-color: var(--accent-terracotta); }
+.badge { font-size: 0.68rem; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 999px; padding: 1px 6px; color: var(--text-secondary); }
+.tab-pane { display: block; }
+.tab-pane.hidden { display: none; }
+.pane-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.status-text { font-size: 0.78rem; color: var(--text-secondary); }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.admin-table th { text-align: left; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); padding: 6px 10px; border-bottom: 2px solid var(--border-strong); white-space: nowrap; }
+.admin-table td { padding: 8px 10px; border-bottom: 1px solid var(--panel-border); vertical-align: middle; }
+.admin-table tr:hover td { background: var(--bg-inset); }
+.tag { font-size: 0.68rem; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 3px; padding: 2px 6px; color: var(--text-secondary); }
+.toggle-btn { font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 3px; border: 2px solid; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+.toggle-btn.on  { background: #d1fae5; border-color: #34d399; color: #065f46; }
+.toggle-btn.off { background: var(--bg-inset); border-color: var(--panel-border); color: var(--text-muted); }
+.del-btn { font-size: 0.72rem; padding: 3px 8px; background: none; border: 1px solid var(--panel-border); border-radius: 3px; cursor: pointer; color: var(--text-muted); font-family: inherit; transition: all 0.15s; }
+.del-btn:hover { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+.empty-note { font-size: 0.82rem; color: var(--text-muted); padding: 20px 0; }
+.lib-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 3px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); }
+</style>
+
+<script>
+  // Tab switching
+  document.querySelectorAll<HTMLButtonElement>(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.add("hidden"));
+      btn.classList.add("active");
+      document.getElementById(`tab-${btn.dataset.tab}`)?.classList.remove("hidden");
+    });
+  });
+
+  function toast(msg: string, ok = true) {
+    const el = document.getElementById("admin-toast")!;
+    el.textContent = msg;
+    el.className = `toast show toast-${ok ? "success" : "error"}`;
+    setTimeout(() => el.classList.remove("show"), 3000);
+  }
+
+  async function post(url: string, body: object) {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return res.json() as Promise<any>;
+  }
+
+  // Model toggle
+  document.querySelectorAll<HTMLButtonElement>(".toggle-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id!;
+      const nowEnabled = btn.dataset.enabled !== "1";
+      btn.disabled = true;
+      const data = await post("/api/admin/models", { action: "toggle", id, enabled: nowEnabled });
+      if (data.success) {
+        btn.dataset.enabled = nowEnabled ? "1" : "0";
+        btn.textContent = nowEnabled ? "✓ On" : "Off";
+        btn.className = `toggle-btn ${nowEnabled ? "on" : "off"}`;
+        toast(`${id} ${nowEnabled ? "enabled" : "disabled"}`);
+      } else {
+        toast(data.error || "Failed", false);
+      }
+      btn.disabled = false;
+    });
+  });
+
+  // Sync button
+  document.getElementById("sync-btn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("sync-btn") as HTMLButtonElement;
+    const status = document.getElementById("sync-status")!;
+    btn.disabled = true; status.textContent = "Syncing…";
+    const data = await post("/api/admin/models", { action: "sync" });
+    if (data.success) {
+      status.textContent = data.inserted > 0 ? `↑ ${data.inserted} new model(s) added (disabled by default)` : "Already up to date";
+      toast(`Sync complete — ${data.inserted ?? 0} new`);
+    } else {
+      status.textContent = data.error || "Sync failed";
+      toast(data.error || "Sync failed", false);
+    }
+    btn.disabled = false;
+  });
+
+  // Delete handlers (library, logs, rate limits)
+  document.querySelectorAll<HTMLButtonElement>(".del-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const { type, id, ip } = btn.dataset;
+      if (!confirm("Delete this entry?")) return;
+      btn.disabled = true;
+
+      let data: any;
+      if (type === "library") data = await post("/api/admin/library", { id });
+      else if (type === "limits") data = await post("/api/admin/rate-limits", { ip_hash: ip });
+      else return;
+
+      if (data?.success) {
+        const rowMap: Record<string, string> = { library: `lib-${id}`, limits: `limit-${ip}` };
+        document.getElementById(rowMap[type!] ?? "")?.remove();
+        toast("Deleted");
+      } else {
+        toast(data?.error || "Delete failed", false);
+        btn.disabled = false;
+      }
+    });
+  });
+</script>
+</body>
+</html>

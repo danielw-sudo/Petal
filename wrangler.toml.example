@@ -1,0 +1,19 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "petalgen"
+compatibility_date = "2026-05-26"
+account_id = "YOUR_ACCOUNT_ID"
+
+[assets]
+directory = "./dist"
+
+[[d1_databases]]
+binding = "D1_DATABASE"
+database_name = "PETALGEN_DB"
+database_id = "YOUR_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "R2_IMAGES"
+bucket_name = "petalgen-images"
+
+[vars]
+R2_PUBLIC_URL = "https://YOUR_R2_DOMAIN"

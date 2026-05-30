@@ -1,0 +1,4 @@
+# Local Wrangler Secret variables (copy to .dev.vars)
+POLLINATIONS_API_KEY=your_secret_api_key_here
+POLLINATIONS_MODEL=zimage
+ADMIN_SECRET=change-me-before-deploying

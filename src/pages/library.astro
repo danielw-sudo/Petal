@@ -1,0 +1,260 @@
+---
+import { env } from "cloudflare:workers";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import "../styles/global.css";
+
+export const prerender = false;
+
+interface SavedImage {
+  id: string; prompt_text: string; context_json: string | null;
+  model: string; width: number; height: number;
+  image_url: string; created_at: string;
+}
+
+const db = (env as any).D1_DATABASE as D1Database | undefined;
+let saved: SavedImage[] = [];
+
+if (db) {
+  try {
+    const r = await db.prepare(
+      "SELECT id, prompt_text, context_json, model, width, height, image_url, created_at FROM saved_images ORDER BY created_at DESC LIMIT 60"
+    ).all();
+    saved = (r.results ?? []) as unknown as SavedImage[];
+  } catch (e) { console.error("Library D1:", e); }
+}
+
+---
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PetalGen — Library</title>
+  <meta name="description" content="Your generated image gallery — browse and remix your creations." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://petalgen.tools4all.ai/library" />
+  <meta property="og:title" content="PetalGen — Image Library" />
+  <meta property="og:description" content="Browse and remix AI-generated images. Powered by Pollinations.ai." />
+  <meta property="og:image" content="https://petalgen.tools4all.ai/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="PetalGen — Image Library" />
+  <meta name="twitter:description" content="Browse and remix AI-generated images. Powered by Pollinations.ai." />
+  <meta name="twitter:image" content="https://petalgen.tools4all.ai/og.png" />
+  <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96x96.png" />
+  <link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
+  <link rel="manifest" href="/site.webmanifest" /><meta name="theme-color" content="#fdf8f1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <Header />
+
+  <main class="library-main">
+    {saved.length > 0 ? (
+      <div class="library-grid" id="library-grid">
+        {saved.map((img) => (
+          <article class="prompt-card" data-id={img.id}>
+            <div class="card-preview">
+              <img class="preview-img" src={img.image_url} alt="Generated image" loading="lazy" decoding="async" width={img.width} height={img.height} />
+              <span class="model-overlay">{img.model}</span>
+            </div>
+            <div class="card-body">
+              <div class="card-meta">
+                <span class="meta-dims">{img.width}×{img.height}</span>
+              </div>
+              <p class="card-excerpt">{img.prompt_text}</p>
+              <button class="expand-toggle" type="button">show more</button>
+              <div class="card-actions">
+                <button class="btn btn-secondary copy-btn" data-prompt={img.prompt_text} type="button">📋 Copy</button>
+                <button class="btn btn-primary remix-btn" data-entry={img.context_json || "{}"} type="button">⚡ Remix</button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    ) : (
+      <div class="empty-state">
+        <div class="empty-icon">🖼</div>
+        <p class="empty-title">Your library is empty</p>
+        <p class="empty-sub">Every image you generate is automatically saved here.</p>
+        <a href="/" class="btn btn-primary" style="margin-top:16px;">Go to Workspace →</a>
+      </div>
+    )}
+  </main>
+
+  <Footer />
+  <div id="app-toast" class="toast"></div>
+
+<style is:global>
+.library-main { max-width: 1400px; margin: 28px auto; padding: 0 24px; display: flex; flex-direction: column; gap: 24px; }
+.lib-header { display: flex; align-items: baseline; gap: 14px; }
+.page-title { font-size: 1.8rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
+.lib-count { font-size: 0.85rem; color: var(--text-secondary); }
+
+/* Masonry grid — JS absolute positioning, no column reflow on expand */
+.library-grid { position: relative; }
+
+/* Card — position set by JS masonry engine */
+.prompt-card { position: absolute; border: 2px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-card); transition: box-shadow 0.15s ease; }
+.prompt-card.open { box-shadow: 5px 5px 0 var(--border-strong); }
+
+/* Preview image — natural aspect ratio, clickable */
+.card-preview { position: relative; background: var(--bg-inset); cursor: pointer; }
+.card-preview:hover .preview-img { transform: scale(1.02); }
+.preview-img { display: block; width: 100%; height: auto; transition: transform 0.3s ease; }
+.model-overlay { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 3px; }
+
+/* Card body — always visible */
+.card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; border-top: 2px solid var(--border-strong); }
+.card-meta { display: flex; gap: 10px; align-items: center; }
+.meta-dims { font-size: 0.68rem; color: var(--text-muted); }
+/* Prompt: clamped to 3 lines by default, full when .open */
+.card-excerpt { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.prompt-card.open .card-excerpt { display: block; overflow: visible; }
+.expand-toggle { font-size: 0.72rem; color: var(--accent-plant); background: none; border: none; cursor: pointer; padding: 2px 0; font-weight: 600; text-align: left; }
+.expand-toggle:hover { text-decoration: underline; }
+.card-actions { display: flex; gap: 8px; padding-top: 4px; }
+
+/* Empty state */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 24px; text-align: center; gap: 10px; }
+.empty-icon { font-size: 2.5rem; }
+.empty-title { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+.empty-sub { font-size: 0.88rem; color: var(--text-secondary); }
+</style>
+
+<script>
+  // ── JS Masonry ────────────────────────────────────────────────────────────
+  const GRID_GAP = 16;
+
+  // Full layout: assigns columns + positions. Locks each card's column in data-col.
+  function layoutMasonry() {
+    const grid = document.getElementById("library-grid") as HTMLElement | null;
+    if (!grid) return;
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>(".prompt-card"));
+    if (!cards.length) return;
+    const w = grid.offsetWidth;
+    const cols = w >= 1100 ? 4 : w >= 720 ? 3 : w >= 480 ? 2 : 1;
+    const colW = Math.floor((w - GRID_GAP * (cols - 1)) / cols);
+    const tops = new Array<number>(cols).fill(0);
+    cards.forEach(card => {
+      const col = tops.indexOf(Math.min(...tops));
+      card.dataset.col  = String(col);
+      card.style.left   = `${col * (colW + GRID_GAP)}px`;
+      card.style.top    = `${tops[col]}px`;
+      card.style.width  = `${colW}px`;
+      tops[col] += card.offsetHeight + GRID_GAP;
+    });
+    grid.style.height = `${Math.max(...tops) - GRID_GAP}px`;
+  }
+
+  // Partial layout: only repositions cards within the same column — no column reassignment.
+  function relayoutColumn(changedCard: HTMLElement) {
+    const grid = document.getElementById("library-grid") as HTMLElement | null;
+    if (!grid) return;
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>(".prompt-card"));
+    const targetCol = changedCard.dataset.col ?? "0";
+    // Sort cards in this column by their current top
+    const colCards = cards
+      .filter(c => c.dataset.col === targetCol)
+      .sort((a, b) => parseFloat(a.style.top) - parseFloat(b.style.top));
+    let top = parseFloat(colCards[0]?.style.top ?? "0");
+    colCards.forEach(c => {
+      c.style.top = `${top}px`;
+      top += c.offsetHeight + GRID_GAP;
+    });
+    // Update grid height from all cards
+    const maxBottom = Math.max(...cards.map(c => parseFloat(c.style.top) + c.offsetHeight));
+    grid.style.height = `${maxBottom}px`;
+  }
+
+  // Initial layout
+  layoutMasonry();
+  // Re-run after each image loads
+  document.querySelectorAll<HTMLImageElement>(".preview-img").forEach(img => {
+    if (!img.complete) img.addEventListener("load", layoutMasonry);
+  });
+  // Full relayout on resize only (column count may change)
+  let _rt: ReturnType<typeof setTimeout>;
+  window.addEventListener("resize", () => { clearTimeout(_rt); _rt = setTimeout(layoutMasonry, 100); });
+
+  // ── Prompt expand/collapse — exclusive (one open at a time) ──────────────
+  let _openCard: HTMLElement | null = null;
+
+  document.querySelectorAll<HTMLButtonElement>(".expand-toggle").forEach(btn => {
+    const card = btn.closest<HTMLElement>(".prompt-card")!;
+    btn.addEventListener("click", () => {
+      const isOpen = card.classList.contains("open");
+      const prevCard = _openCard;
+
+      // Close all
+      document.querySelectorAll<HTMLElement>(".prompt-card").forEach(c => {
+        c.classList.remove("open");
+        const t = c.querySelector<HTMLButtonElement>(".expand-toggle");
+        if (t) t.textContent = "show more";
+      });
+      _openCard = null;
+
+      if (!isOpen) {
+        card.classList.add("open");
+        btn.textContent = "show less";
+        _openCard = card;
+      }
+
+      requestAnimationFrame(() => {
+        relayoutColumn(card);
+        // If a card in a DIFFERENT column was previously open, close its gap too
+        if (prevCard && prevCard.dataset.col !== card.dataset.col) {
+          relayoutColumn(prevCard);
+        }
+      });
+    });
+  });
+
+  // ── Copy prompt to clipboard ───────────────────────────────────────────────
+  document.querySelectorAll<HTMLButtonElement>(".copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      navigator.clipboard.writeText(btn.dataset.prompt || "").then(() => {
+        const orig = btn.textContent;
+        btn.textContent = "✓ Copied";
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }).catch(() => showToast("Copy failed", "error"));
+    });
+  });
+
+  // ── Remix ──────────────────────────────────────────────────────────────────
+  document.querySelectorAll<HTMLButtonElement>(".remix-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      try {
+        const ctx = JSON.parse(btn.dataset.entry || "{}");
+        const makeM = (id: string, label: string, v: string) =>
+          ({ id, label, value: v || "", locked: false, weight: 1, alternatives: [] });
+        const full: Record<string, unknown> = {
+          subject:     makeM("subject",     "Subject",     ctx.subject?.value     || ctx.subject     || ""),
+          lighting:    makeM("lighting",    "Lighting",    ctx.lighting?.value    || ctx.lighting    || ""),
+          composition: makeM("composition", "Composition", ctx.composition?.value || ctx.composition || ""),
+          style:       makeM("style",       "Style",       ctx.style?.value       || ctx.style       || ""),
+          mood:        makeM("mood",        "Mood",        ctx.mood?.value        || ctx.mood        || ""),
+          technical:   makeM("technical",   "Technical",   ctx.technical?.value   || ctx.technical   || ""),
+          ...(ctx.clothing    && { clothing:    makeM("clothing",    "Clothing",    ctx.clothing?.value    || ctx.clothing)    }),
+          ...(ctx.scene       && { scene:       makeM("scene",       "Scene",       ctx.scene?.value       || ctx.scene)       }),
+          ...(ctx.pose        && { pose:        makeM("pose",        "Pose",        ctx.pose?.value        || ctx.pose)        }),
+          ...(ctx.constraints && { constraints: makeM("constraints", "Constraints", ctx.constraints?.value || ctx.constraints) }),
+          raw: ctx.raw || "",
+          metadata: { schemaVersion: "2026.05.library", targetModel: ctx.metadata?.targetModel || "zimage", createdAt: new Date().toISOString(), remixCount: 0 },
+        };
+        localStorage.setItem("petalgen_remix_context", JSON.stringify(full));
+        window.location.href = "/";
+      } catch { showToast("Failed to load", "error"); }
+    });
+  });
+
+  function showToast(msg: string, type: "success" | "error" = "success") {
+    const t = document.getElementById("app-toast")!;
+    t.textContent = msg; t.className = `toast show toast-${type}`;
+    setTimeout(() => t.classList.remove("show"), 3000);
+  }
+</script>
+</body>
+</html>

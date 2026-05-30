@@ -1,0 +1,402 @@
+---
+// index.astro
+import Header from "../components/Header.astro";
+import PromptInput from "../components/PromptInput.astro";
+import ModulePanel from "../components/ModulePanel.astro";
+import ImageResult from "../components/ImageResult.astro";
+import Footer from "../components/Footer.astro";
+import "../styles/global.css";
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>PetalGen — Modular Prompt Refactoring Engine</title>
+    <meta name="description" content="Decompose monolithic AI prompts into 10 structured, remixable modules. Lock what you love, change what you need." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://petalgen.tools4all.ai/" />
+    <meta property="og:title" content="PetalGen — Modular Prompt Refactoring Engine" />
+    <meta property="og:description" content="Decompose AI prompts into 10 structured modules. Edit, lock, shuffle, generate. Powered by Pollinations.ai." />
+    <meta property="og:image" content="https://petalgen.tools4all.ai/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PetalGen — Modular Prompt Refactoring Engine" />
+    <meta name="twitter:description" content="Decompose AI prompts into 10 structured modules. Edit, lock, shuffle, generate. Powered by Pollinations.ai." />
+    <meta name="twitter:image" content="https://petalgen.tools4all.ai/og.png" />
+    <!-- Favicons & PWA -->
+    <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#fdf8f1" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <Header>
+      <div id="auth-widget" style="display: flex; align-items: center; gap: 12px;">
+        <button id="connect-btn" class="btn btn-amber">🔑 Free API key</button>
+      </div>
+    </Header>
+
+    <!-- Main Workspace Grid -->
+    <main class="app-container">
+      <!-- Edit Column -->
+      <div style="display: flex; flex-direction: column; gap: 32px;">
+        <PromptInput />
+        <ModulePanel />
+      </div>
+
+      <!-- Output Column -->
+      <ImageResult />
+    </main>
+
+    <Footer />
+
+    <!-- Toast Notification -->
+    <div id="app-toast" class="toast">Successfully completed action.</div>
+
+    <!-- First-visit Terms of Use Modal -->
+    <div id="tou-overlay" class="tou-overlay" style="display:none;" aria-modal="true" role="dialog" aria-labelledby="tou-title">
+      <div class="tou-card">
+        <div class="tou-logo">
+          <img src="/icons/icon-96x96.png" alt="PetalGen" />
+        </div>
+        <h2 id="tou-title" class="tou-title">Welcome to PetalGen</h2>
+        <p class="tou-subtitle">Modular Prompt Refactoring Engine</p>
+
+        <div class="tou-how">
+          <div class="tou-step"><span class="tou-step-num">1</span><span>Paste any AI prompt — comma-separated, JSON, or prose</span></div>
+          <div class="tou-step"><span class="tou-step-num">2</span><span>Click <strong>Refactor</strong> to decompose it into 10 editable modules</span></div>
+          <div class="tou-step"><span class="tou-step-num">3</span><span>Tune each module, lock what you love, shuffle the rest</span></div>
+          <div class="tou-step"><span class="tou-step-num">4</span><span>Hit <strong>Run Validation Gen</strong> to render and download</span></div>
+        </div>
+
+        <div class="tou-terms">
+          <p>Before continuing, please note:</p>
+          <ul>
+            <li>Prompts you submit may be logged for model improvement (no PII collected).</li>
+            <li>Generated images are processed via Pollinations.ai — subject to their usage policy.</li>
+            <li><strong>Z-Image Turbo is the default model</strong> (optimised for the free tier). You may select other models if you connect your own Pollinations key.</li>
+            <li>This tool is intended for users <strong>18 years or older</strong>.</li>
+            <li>Service is provided "as is" with no uptime or quality guarantees.</li>
+          </ul>
+          <a href="/policy" target="_blank" rel="noopener" class="tou-policy-link">Read full Terms of Use & Privacy Notice ↗</a>
+        </div>
+
+        <button id="tou-accept-btn" class="btn btn-primary tou-accept">
+          ✓ Accept & Enter Workspace
+        </button>
+      </div>
+    </div>
+
+    <style>
+      .tou-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 8, 6, 0.82);
+        backdrop-filter: blur(6px);
+        z-index: 9998;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        animation: touFadeIn 0.25s ease-out;
+      }
+      @keyframes touFadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      .tou-card {
+        background: var(--bg-card);
+        border: 2px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        box-shadow: 8px 8px 0 var(--border-strong);
+        padding: 36px 32px;
+        max-width: 520px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+        animation: touSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes touSlideUp {
+        from { transform: translateY(24px); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+      .tou-logo {
+        width: 56px;
+        height: 56px;
+        margin-bottom: 16px;
+      }
+      .tou-logo img { width: 100%; height: 100%; object-fit: contain; }
+      .tou-title {
+        font-family: var(--font-display);
+        font-size: 0.7rem;
+        color: var(--text-primary);
+        text-align: center;
+        margin-bottom: 6px;
+        line-height: 1.8;
+      }
+      .tou-subtitle {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        margin-bottom: 24px;
+        text-align: center;
+      }
+      .tou-how {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 24px;
+        padding: 18px;
+        background: var(--bg-inset);
+        border: 1px solid var(--panel-border);
+        border-radius: var(--radius-sm);
+      }
+      .tou-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        font-size: 0.88rem;
+        color: var(--text-secondary);
+        line-height: 1.5;
+      }
+      .tou-step-num {
+        width: 22px;
+        height: 22px;
+        background: var(--text-primary);
+        color: #fff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        font-weight: 700;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .tou-terms {
+        width: 100%;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+        line-height: 1.65;
+        margin-bottom: 24px;
+      }
+      .tou-terms p {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 8px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .tou-terms ul {
+        padding-left: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        margin-bottom: 12px;
+      }
+      .tou-policy-link {
+        font-size: 0.78rem;
+        color: var(--accent-plant);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .tou-policy-link:hover { text-decoration: underline; }
+      .tou-accept {
+        width: 100%;
+        justify-content: center;
+        font-size: 0.9rem;
+        padding: 12px 20px;
+      }
+    </style>
+
+    <!-- Client Auth Script -->
+    <script>
+      import { getStoredApiKey, clearStoredApiKey, setStoredApiKey, validateApiKey } from "../api";
+
+      const authWidget = document.getElementById("auth-widget") as HTMLDivElement;
+      const toastEl = document.getElementById("app-toast") as HTMLDivElement;
+
+      // Initialize App Auth State
+      async function checkAuth() {
+        const apiKey = getStoredApiKey();
+        if (!apiKey) {
+          renderSignedOut();
+          return;
+        }
+
+        renderLoading();
+
+        const result = await validateApiKey(apiKey);
+        if (result.success) {
+          renderSignedIn(result.balance ?? 0);
+        } else {
+          clearStoredApiKey();
+          renderSignedOut();
+          showToast("Session expired or invalid API key.", "error");
+        }
+      }
+
+      function renderLoading() {
+        authWidget.innerHTML = `
+          <div class="loader-spinner" style="width: 18px; height: 18px; border-width: 2px;"></div>
+          <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Validating...</span>
+        `;
+      }
+
+      function renderSignedOut() {
+        authWidget.innerHTML = `
+          <span class="pollen-badge" style="background:#fef9c3; border-color:#fde047; color:#854d0e; margin-right: 4px;">Demo Mode</span>
+          <button id="connect-btn-dynamic" class="btn btn-amber" style="padding: 6px 12px; font-size:0.8rem;">
+            🔑 Free API key
+          </button>
+        `;
+        
+        document.getElementById("connect-btn-dynamic")?.addEventListener("click", () => {
+          renderKeyInputForm();
+        });
+      }
+
+      function renderKeyInputForm() {
+        authWidget.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <input
+              id="api-key-input"
+              type="password"
+              placeholder="Paste pk_... key"
+              style="background: var(--bg-inset); border: 2px solid var(--border-strong); border-radius: 4px; padding: 6px 10px; font-size: 0.8rem; color: var(--text-primary); width: 180px; outline: none; font-family: var(--font-sans);"
+            />
+            <button id="submit-key-btn" class="btn btn-amber" style="padding: 6px 10px; font-size: 0.78rem;">Submit</button>
+            <button id="cancel-key-btn" class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.78rem;">Cancel</button>
+            <a href="https://enter.pollinations.ai" target="_blank" rel="noopener noreferrer" style="font-size: 0.75rem; color: var(--accent-plant); font-weight: 600; text-decoration: none;">Get Key ↗</a>
+          </div>
+          <p id="key-warning" style="display:none;font-size:0.72rem;color:#b45309;margin-top:4px;line-height:1.4;">
+            ⚠ Secret keys (<code>sk_</code>) should stay server-side. Use a <strong>pk_</strong> publishable key in the browser instead.
+          </p>
+        `;
+
+        const input = document.getElementById("api-key-input") as HTMLInputElement;
+        const submitBtn = document.getElementById("submit-key-btn") as HTMLButtonElement;
+        const cancelBtn = document.getElementById("cancel-key-btn") as HTMLButtonElement;
+        const keyWarning = document.getElementById("key-warning") as HTMLParagraphElement;
+
+        input.addEventListener("input", () => {
+          keyWarning.style.display = input.value.trim().startsWith("sk_") ? "block" : "none";
+        });
+
+        cancelBtn.addEventListener("click", () => {
+          renderSignedOut();
+        });
+
+        submitBtn.addEventListener("click", async () => {
+          const key = input.value.trim();
+          if (!key) {
+            showToast("Please paste your API key", "error");
+            return;
+          }
+
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Checking...";
+
+          const result = await validateApiKey(key);
+          if (result.success) {
+            setStoredApiKey(key);
+            renderSignedIn(result.balance ?? 0);
+            showToast("Successfully connected key!", "success");
+            window.location.reload();
+          } else {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Submit";
+            showToast(result.error || "Invalid key verification failed", "error");
+          }
+        });
+      }
+
+      function renderSignedIn(balance: number) {
+        authWidget.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 24px; height: 24px; border-radius: 50%; background: var(--accent-plant); border: 2px solid var(--border-strong); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; color: white;">✓</div>
+            <span style="font-size:0.82rem; font-weight:700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.05em;">Connected</span>
+          </div>
+          <span class="pollen-badge">${balance.toFixed(2)} Pollen</span>
+          <button id="disconnect-btn" class="btn btn-danger" style="padding: 6px 10px; font-size: 0.75rem;">
+            Disconnect
+          </button>
+        `;
+
+        document.getElementById("disconnect-btn")?.addEventListener("click", () => {
+          clearStoredApiKey();
+          renderSignedOut();
+          showToast("Disconnected from Pollinations.", "success");
+          window.location.reload();
+        });
+      }
+
+      // Global Toast Handler
+      function showToast(message: string, type: "success" | "error" = "success") {
+        if (!toastEl) return;
+        toastEl.textContent = message;
+        toastEl.className = `toast show toast-${type}`;
+        setTimeout(() => {
+          toastEl.classList.remove("show");
+        }, 3000);
+      }
+
+      window.addEventListener("show-toast", (e: any) => {
+        showToast(e.detail.message, e.detail.type);
+      });
+
+      // Run on boot
+      checkAuth();
+
+      // --- First-visit ToU Gate ---
+      const TOU_KEY = "petalgen_tou_accepted";
+      const touOverlay = document.getElementById("tou-overlay") as HTMLDivElement;
+      const touAcceptBtn = document.getElementById("tou-accept-btn") as HTMLButtonElement;
+
+      if (!localStorage.getItem(TOU_KEY)) {
+        touOverlay.style.display = "flex";
+        document.body.style.overflow = "hidden";
+      }
+
+      touAcceptBtn?.addEventListener("click", () => {
+        localStorage.setItem(TOU_KEY, "1");
+        touOverlay.style.display = "none";
+        document.body.style.overflow = "";
+      });
+      // --- end ToU Gate ---
+
+      // Check for remix payload from trends dashboard
+      setTimeout(() => {
+        const remixData = localStorage.getItem("petalgen_remix_context");
+        if (remixData) {
+          try {
+            const parsed = JSON.parse(remixData);
+            localStorage.removeItem("petalgen_remix_context");
+            
+            // Populate Monolithic Input raw text if present
+            const inputEl = document.getElementById("raw-prompt-input") as HTMLTextAreaElement;
+            if (inputEl && parsed.raw) {
+              inputEl.value = parsed.raw;
+            }
+
+            window.dispatchEvent(new CustomEvent("prompt-refactored", {
+              detail: parsed
+            }));
+            showToast("Loaded remixed template from trends!", "success");
+          } catch (e) {}
+        }
+      }, 150);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,199 @@
+---
+// policy.astro — Terms of Use & Privacy Notice
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+export const prerender = true;
+
+const updated = "2026-05-29";
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PetalGen — Terms of Use & Privacy</title>
+    <meta name="description" content="PetalGen terms of use, data handling, and privacy notice." />
+    <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#fdf8f1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <Header />
+
+    <main class="policy-container">
+      <div class="policy-header">
+        <p class="policy-updated">Last updated: {updated}</p>
+        <h1 class="policy-title">Terms of Use & Privacy Notice</h1>
+        <p class="policy-lead">
+          PetalGen is a free public demo tool for AI prompt modularization. Please read these terms before using the service.
+        </p>
+      </div>
+
+      <div class="policy-body">
+
+        <section class="policy-section">
+          <h2>1. What PetalGen Does</h2>
+          <p>PetalGen decomposes monolithic AI image prompts into structured, remixable modules. It sends your input to a third-party language model (via <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations.ai</a>) to perform the extraction, and optionally generates validation images using Pollinations image endpoints. PetalGen also supports <strong>reference image (img2img)</strong> generation: you may upload a local image to guide generation, which is processed entirely in your browser before transmission.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2>2. Data Collection & Harvesting</h2>
+          <p>By using PetalGen you acknowledge and agree that:</p>
+          <ul>
+            <li>Prompts you submit for refactoring may be <strong>logged and stored</strong> in a server-side database (Cloudflare D1) for analytics and self-improvement purposes.</li>
+            <li>Extracted prompt tokens (subject, style, lighting, etc.) are <strong>harvested and aggregated</strong> to improve the Token Factory's frequency-weighted sampling and template synthesis.</li>
+            <li>No personally identifiable information (PII) is intentionally collected. Do not include names, addresses, or sensitive personal data in your prompts.</li>
+            <li>IP addresses may be recorded transiently for rate-limiting purposes and are not shared or sold.</li>
+          </ul>
+        </section>
+
+        <section class="policy-section">
+          <h2>3. Generated Images & Reference Uploads</h2>
+          <ul>
+            <li>Images are generated via Pollinations.ai endpoints. When you choose to save an image, it is stored in Cloudflare R2 and appears in your Library.</li>
+            <li>You are responsible for the prompts you submit. Do not generate content that violates applicable laws or Pollinations.ai's usage policies.</li>
+            <li>Images generated using the system API key are subject to Pollinations.ai rate limits and terms.</li>
+            <li><strong>Reference images</strong> you upload are resized to ≤1024px and re-encoded as JPEG in your browser. EXIF metadata (including GPS, device info) is stripped before transmission. Reference images are forwarded to Pollinations.ai's <code>/v1/images/edits</code> endpoint and are not stored by PetalGen.</li>
+            <li>Face and identity preservation in reference image generation requires a model explicitly trained for it (e.g. Kontext). Other models use the reference image loosely. PetalGen displays a model compatibility warning where applicable.</li>
+            <li>Only upload reference images you own or have the right to use. Do not upload images depicting real individuals without their consent.</li>
+          </ul>
+        </section>
+
+        <section class="policy-section">
+          <h2>4. Model Selection & Default Behaviour</h2>
+          <p><strong>Z-Image Turbo is the default model.</strong> This is intentional — it is optimised for the free Seed tier (fast, low pollen cost, reliable). It does not support negative prompts; any exclusion constraints are compiled into the positive prompt string automatically.</p>
+          <ul>
+            <li>Users who connect their own Pollinations key (BYOP) may select any model enabled by the operator. Different models consume pollen at different rates and are subject to different capabilities and restrictions.</li>
+            <li>The available model list is controlled by the operator and may change without notice. Model behaviour, output quality, and content policies vary by model and are governed by Pollinations.ai.</li>
+            <li>Some models may produce content not suitable for all audiences. You are responsible for choosing an appropriate model for your use case.</li>
+          </ul>
+        </section>
+
+        <section class="policy-section">
+          <h2>5. Your API Key (BYOP)</h2>
+          <p>If you connect your own Pollinations API key, it is stored locally in your browser (<code>localStorage</code>) and is never transmitted to PetalGen's servers. It is sent directly to Pollinations.ai endpoints from your browser. Remove it at any time via the Disconnect button.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2>6. Content Restrictions</h2>
+          <ul>
+            <li>PetalGen targets <strong>adult users (18+)</strong>. Some image models may produce mature content.</li>
+            <li>You must not use PetalGen to generate content depicting minors in sexual contexts, content that promotes violence or hatred, or content that violates Pollinations.ai's acceptable use policy.</li>
+          </ul>
+        </section>
+
+        <section class="policy-section">
+          <h2>7. No Warranty</h2>
+          <p>PetalGen is provided <strong>"as is"</strong> without warranty of any kind. The service may be unavailable, rate-limited, or produce inaccurate results. We make no guarantees about uptime, output quality, or fitness for any particular purpose.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2>8. Third-Party Services</h2>
+          <p>PetalGen relies on <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations.ai</a> for AI inference. Your use of PetalGen is also subject to Pollinations.ai's own terms and privacy policy. We are not affiliated with or endorsed by Pollinations.ai.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2>9. Changes to This Policy</h2>
+          <p>We may update these terms at any time. Continued use of PetalGen after changes constitutes acceptance of the updated terms. The date at the top of this page reflects the most recent revision.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2>10. Contact</h2>
+          <p>PetalGen is an independent open-source project. For questions, open an issue on the project repository.</p>
+        </section>
+
+      </div>
+
+      <div class="policy-footer">
+        <a href="/" class="btn btn-primary">← Back to Workspace</a>
+      </div>
+    </main>
+
+    <Footer />
+
+    <style>
+      .policy-container {
+        max-width: 780px;
+        margin: 48px auto;
+        padding: 0 24px 64px;
+      }
+      .policy-header {
+        margin-bottom: 40px;
+        padding-bottom: 28px;
+        border-bottom: 2px solid var(--border-strong);
+      }
+      .policy-updated {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+      }
+      .policy-title {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        letter-spacing: -0.02em;
+        margin-bottom: 14px;
+      }
+      .policy-lead {
+        font-size: 1rem;
+        color: var(--text-secondary);
+        line-height: 1.65;
+        max-width: 620px;
+      }
+      .policy-body {
+        display: flex;
+        flex-direction: column;
+        gap: 36px;
+      }
+      .policy-section h2 {
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-primary);
+        border-left: 3px solid var(--accent-plant);
+        padding-left: 10px;
+        margin-bottom: 14px;
+      }
+      .policy-section p,
+      .policy-section ul {
+        font-size: 0.95rem;
+        color: var(--text-secondary);
+        line-height: 1.75;
+      }
+      .policy-section ul {
+        padding-left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .policy-section a {
+        color: var(--accent-plant);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .policy-section a:hover { text-decoration: underline; }
+      .policy-section code {
+        background: var(--bg-inset);
+        border: 1px solid var(--panel-border);
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 0.88em;
+        color: var(--text-primary);
+      }
+      .policy-footer {
+        margin-top: 52px;
+        padding-top: 24px;
+        border-top: 1px solid var(--panel-border);
+      }
+    </style>
+  </body>
+</html>

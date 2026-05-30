@@ -1,0 +1,426 @@
+---
+// ImageResult.astro
+---
+<div class="output-pane">
+  <!-- Model & Preview -->
+  <div class="panel">
+    <h3 class="section-title">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      Model & Compiled Preview
+    </h3>
+
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+
+      <!-- Row 1: Model -->
+      <div>
+        <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; display: block;">Target Render Engine</label>
+        <div class="select-wrapper">
+          <select id="model-select" disabled>
+            <option value="zimage">Z-Image Turbo (SOTA Fast)</option>
+            <option value="flux">Flux Schnell (Realistic details)</option>
+            <option value="nanobanana-pro">Nano Banana Pro (Stylized arts)</option>
+            <option value="grok-imagine">Grok Imagine (Vivid scenes)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 2: Aspect Ratio + Enhance inline -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div>
+          <label style="font-size: 0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color: var(--text-secondary); margin-bottom: 6px; display: block;">Aspect Ratio</label>
+          <div class="select-wrapper">
+            <select id="resolution-select">
+              <option value="1024x1024|1:1" selected>Square — 1:1</option>
+              <option value="768x1024|3:4">Portrait — 3:4</option>
+              <option value="576x1024|9:16">Vertical — 9:16</option>
+              <option value="1024x768|4:3">Landscape — 4:3</option>
+              <option value="1024x576|16:9">Wide — 16:9</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; justify-content: flex-end;">
+          <label style="font-size: 0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color: var(--text-secondary); margin-bottom: 6px; display: block;">Enhance Prompt</label>
+          <div style="display: flex; align-items: center; gap: 10px; height: 38px;">
+            <label class="toggle-switch" style="margin-bottom: 0;">
+              <input type="checkbox" id="enhance-toggle" />
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="enhance-label" style="font-size: 0.8rem; color: var(--text-secondary);">Off</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2b: Reference Image (optional, file-driven) -->
+      <div style="border:1px solid var(--panel-border);border-radius:var(--radius-sm);padding:10px;background:var(--bg-inset);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);">Reference Image</span>
+          <span id="ref-hint" style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">upload to enable</span>
+        </div>
+        <input type="file" id="ref-file" accept="image/jpeg,image/png,image/webp" style="font-size:0.78rem;width:100%;color:var(--text-primary);" />
+        <div id="ref-panel" style="display:none;margin-top:8px;">
+          <p id="ref-instr-preview" style="font-size:0.7rem;color:var(--accent-plant);margin-bottom:8px;line-height:1.4;"></p>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);flex-shrink:0;">Strength</label>
+            <input type="range" id="ref-strength" min="0" max="1" step="0.05" value="0.75" style="flex:1;accent-color:var(--accent-plant);" />
+            <span id="ref-strength-val" style="font-size:0.78rem;color:var(--text-primary);width:28px;text-align:right;">0.75</span>
+          </div>
+          <p style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">0.1–0.3 preserve · 0.4–0.6 balanced · 0.7–1.0 reimagine</p>
+          <p id="ref-model-compat" style="display:none;font-size:0.68rem;color:var(--accent-terracotta);margin-top:6px;line-height:1.5;">⚠ Face / identity preservation requires <strong>Kontext</strong> or <strong>GPT Image</strong>. Current model uses the reference loosely for style/composition only.</p>
+        </div>
+      </div>
+
+      <!-- Row 2c: Model-specific info note -->
+      <div id="model-note" style="font-size: 0.75rem; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--panel-border); background: var(--bg-inset); color: var(--text-muted); display: none;"></div>
+
+      <!-- Row 3: Compiled preview + copy -->
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label style="font-size: 0.85rem; color: var(--text-secondary);">Reconstructed String</label>
+          <button id="copy-prompt-btn" title="Copy compiled prompt" style="background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; display: flex; align-items: center; gap: 4px; transition: color 0.2s;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <span id="copy-label">Copy</span>
+          </button>
+        </div>
+        <div class="compiled-box" id="positive-preview">Ready to compile...</div>
+      </div>
+
+      <button id="generate-btn" class="btn btn-primary" style="width: 100%; justify-content: center;" disabled>
+        ⚡ Run Validation Gen
+      </button>
+    </div>
+  </div>
+
+  <!-- Viewport -->
+  <div class="panel" style="padding: 16px;">
+    <div class="viewport-card">
+      <!-- Placeholder -->
+      <div id="viewport-placeholder" class="viewport-placeholder">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375 0 11-.75 0 .375 0 01.75 0z"/></svg>
+        <p>Awaiting compiled prompt validation</p>
+      </div>
+
+      <!-- Live Image -->
+      <img id="viewport-img" class="viewport-image" alt="Validation output" />
+
+      <!-- Loader overlay -->
+      <div id="loader-overlay" class="loader-overlay" style="display: none;">
+        <div class="loader-spinner"></div>
+        <div class="loader-text">Validating Prompt Array...</div>
+      </div>
+
+      <!-- Error state -->
+      <div id="viewport-error" class="viewport-placeholder" style="display:none; flex-direction:column; gap:12px; padding:24px; text-align:center;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="color:var(--accent-terracotta);flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p id="error-message" style="font-size:0.82rem; margin:0; color:var(--text-primary); line-height:1.5;"></p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+          <button id="error-retry-btn" class="btn btn-secondary" style="font-size:0.78rem; padding:5px 12px; display:none;">↺ Try again</button>
+          <button id="error-byop-btn" class="btn btn-primary" style="font-size:0.78rem; padding:5px 12px; display:none;">🔑 Add Pollinations key</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions & Metadata -->
+    <div id="meta-actions" style="margin-top: 16px; display: none; flex-direction: column; gap: 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-size: 0.75rem; color: var(--text-secondary);">
+          <div id="meta-seed">Seed: --</div>
+          <div id="meta-log">Log ID: --</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="save-gallery-btn" class="btn btn-primary" style="font-size: 0.82rem; padding: 6px 14px;">
+            💾 Save to Gallery
+          </button>
+          <button id="download-btn" class="btn btn-secondary" style="font-size: 0.82rem; padding: 6px 12px;">
+            📥 Download
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  import type { PromptContext } from "../types/prompt";
+  import { generateImage, saveToGallery, getStoredApiKey } from "../api";
+
+  let compiledContext: PromptContext | null = null;
+  let activeImageBlob: Blob | null = null;
+  let lastGenMeta: { logId: string; r2Key: string; imageUrl: string; prompt: string; contextJson: string; model: string; w: number; h: number } | null = null;
+
+  const posPreview = document.getElementById("positive-preview") as HTMLDivElement;
+  const modelSelect      = document.getElementById("model-select")      as any;
+  const resolutionSelect = document.getElementById("resolution-select") as any;
+  const enhanceToggle    = document.getElementById("enhance-toggle")    as HTMLInputElement;
+  const enhanceLabel     = document.getElementById("enhance-label")     as HTMLSpanElement;
+  const copyBtn          = document.getElementById("copy-prompt-btn")   as HTMLButtonElement;
+
+  enhanceToggle?.addEventListener("change", () => {
+    if (enhanceLabel) enhanceLabel.textContent = enhanceToggle.checked ? "On" : "Off";
+  });
+  const copyLabel        = document.getElementById("copy-label")        as HTMLSpanElement;
+  const generateBtn      = document.getElementById("generate-btn")      as HTMLButtonElement;
+
+  copyBtn?.addEventListener("click", () => {
+    const text = posPreview?.textContent?.trim();
+    if (!text || text === "Ready to compile...") return;
+    navigator.clipboard.writeText(text).then(() => {
+      if (copyLabel) copyLabel.textContent = "✓ Copied";
+      copyBtn.style.color = "var(--accent-plant)";
+      setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = "Copy";
+        copyBtn.style.color = "";
+      }, 2000);
+    });
+  });
+
+  const placeholder = document.getElementById("viewport-placeholder") as HTMLDivElement;
+  const viewportImg = document.getElementById("viewport-img") as HTMLImageElement;
+  const loader = document.getElementById("loader-overlay") as HTMLDivElement;
+  const metaActions = document.getElementById("meta-actions") as HTMLDivElement;
+  const seedText = document.getElementById("meta-seed") as HTMLDivElement;
+  const logText = document.getElementById("meta-log") as HTMLDivElement;
+  const downloadBtn = document.getElementById("download-btn") as HTMLButtonElement;
+  const saveGalleryBtn = document.getElementById("save-gallery-btn") as HTMLButtonElement;
+  const modelNote = document.getElementById("model-note") as HTMLDivElement;
+
+  const MODEL_NOTES: Record<string, string> = {
+    zimage: "⚡ Fast unconditional diffusion · Negative prompt not used (constraints compiled into positive prompt)",
+    flux: "🎨 Supports negative prompt separation · Best for realistic detail",
+    "nanobanana-pro": "🍌 Stylized art output · Experimental model",
+    "grok-imagine": "🌅 Vivid scene generation · Optimized for landscapes & atmosphere",
+  };
+
+  // ── Reference image controls ─────────────────────────────────────────────
+  const refFile        = document.getElementById("ref-file")           as HTMLInputElement;
+  const refPanel       = document.getElementById("ref-panel")          as HTMLDivElement;
+  const refHint        = document.getElementById("ref-hint")           as HTMLSpanElement;
+  const refStrength    = document.getElementById("ref-strength")       as HTMLInputElement;
+  const refStrengthV   = document.getElementById("ref-strength-val")   as HTMLSpanElement;
+  const refInstrPrev   = document.getElementById("ref-instr-preview")  as HTMLParagraphElement;
+
+  const refModelCompat = document.getElementById("ref-model-compat") as HTMLParagraphElement;
+  const IDENTITY_MODELS = new Set(["kontext","gptimage","gptimage-large"]);
+
+  function updateRefInstrPreview() {
+    const instr = (compiledContext as any)?.reference?.value?.trim() || "use uploaded image as reference";
+    if (refInstrPrev) refInstrPrev.textContent = `→ ${instr}`;
+  }
+
+  function updateRefModelCompat() {
+    if (!refModelCompat) return;
+    const cur = modelSelect?.value || "";
+    refModelCompat.style.display = (refFile?.files?.[0] && !IDENTITY_MODELS.has(cur)) ? "block" : "none";
+  }
+
+  refFile?.addEventListener("change", () => {
+    const hasFile = !!refFile.files?.[0];
+    refPanel.style.display = hasFile ? "block" : "none";
+    if (refHint) refHint.style.display = hasFile ? "none" : "";
+    if (hasFile) { updateRefInstrPreview(); updateRefModelCompat(); }
+    else if (refModelCompat) refModelCompat.style.display = "none";
+  });
+
+  modelSelect?.addEventListener("change", () => {
+    if (compiledContext) compiledContext.metadata.targetModel = modelSelect.value;
+    localStorage.setItem("petalgen_model", modelSelect.value);
+    updateModelNote();
+    updateRefModelCompat();
+  });
+
+  refStrength?.addEventListener("input", () => {
+    refStrengthV.textContent = parseFloat(refStrength.value).toFixed(2);
+  });
+
+
+
+  async function prepareReferenceImage(file: File): Promise<Blob> {
+    const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
+    if (!ALLOWED.includes(file.type)) throw new Error("Reference image must be JPEG, PNG, or WebP.");
+    if (file.size > 20 * 1024 * 1024) throw new Error("Reference image must be under 20MB.");
+    const MAX_DIM = 1024;
+    const bitmap = await createImageBitmap(file);
+    const scale  = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width  * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx    = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+  }
+
+  // ── Load enabled models from API, fall back to hardcoded options ──────────
+  (async () => {
+    try {
+      const res = await fetch("/api/models?type=image");
+      const data = await res.json() as any;
+      if (data.success && data.models?.length) {
+        const saved = localStorage.getItem("petalgen_model") || "zimage";
+        while (modelSelect.options.length > 0) modelSelect.remove(0);
+        for (const m of data.models) {
+          const opt = new Option(m.name + (m.description ? ` · ${m.description}` : ""), m.id);
+          if (m.id === saved) opt.selected = true;
+          modelSelect.add(opt);
+        }
+        for (const m of data.models) {
+          if (m.description) MODEL_NOTES[m.id] = m.description;
+        }
+        if (compiledContext) compiledContext.metadata.targetModel = modelSelect.value;
+        updateModelNote();
+      }
+    } catch {}
+    modelSelect.disabled = false;
+  })();
+
+  function updateModelNote() {
+    const note = MODEL_NOTES[modelSelect?.value];
+    if (note && modelNote) {
+      modelNote.textContent = note;
+      modelNote.style.display = "block";
+    } else if (modelNote) {
+      modelNote.style.display = "none";
+    }
+  }
+
+  window.addEventListener("prompt-compiled", (e: any) => {
+    compiledContext = e.detail as PromptContext;
+    if (!compiledContext) return;
+    compiledContext.metadata.targetModel = modelSelect.value;
+    posPreview.textContent = compiledContext.remixedOutput || "(Empty compiled prompt)";
+    generateBtn.disabled = !compiledContext.remixedOutput;
+    updateModelNote();
+
+    // Refresh ref instruction preview if a file is already loaded
+    if (refFile?.files?.[0]) updateRefInstrPreview();
+  });
+
+
+  updateModelNote();
+
+  generateBtn.addEventListener("click", () => {
+    if (compiledContext) executeGeneration();
+  });
+
+  async function executeGeneration() {
+    if (!compiledContext) return;
+
+    loader.style.display = "flex";
+    placeholder.style.display = "none";
+    (document.getElementById("viewport-error") as HTMLDivElement).style.display = "none";
+    viewportImg.classList.remove("loaded");
+    metaActions.style.display = "none";
+    generateBtn.disabled = true;
+
+    const userKey = getStoredApiKey() || undefined;
+    const seed = Math.floor(Math.random() * 10000000);
+    const rawRes = resolutionSelect?.value || "1024x1024|1:1";
+    const [dims, aspectRatio] = rawRes.split("|");
+    const [w, h] = dims.split("x").map(Number);
+    const enhance = enhanceToggle?.checked ?? false;
+
+    // Reference image — enabled by file upload, instruction from Reference module or default
+    let refImageArg: { blob: Blob; strength: number; instruction?: string } | undefined;
+    if (refFile?.files?.[0]) {
+      try {
+        const compressed = await prepareReferenceImage(refFile.files[0]);
+        const instruction = (compiledContext as any)?.reference?.value?.trim() || "use uploaded image as reference";
+        refImageArg = { blob: compressed, strength: parseFloat(refStrength?.value ?? "0.75"), instruction };
+      } catch (e: any) {
+        loader.style.display = "none";
+        (document.getElementById("viewport-error") as HTMLDivElement).style.display = "flex";
+        (document.getElementById("error-message") as HTMLParagraphElement).textContent = e.message;
+        generateBtn.disabled = false;
+        return;
+      }
+    }
+
+    const result = await generateImage(compiledContext, userKey, w, h, seed, enhance, aspectRatio, refImageArg);
+
+    if (result.success && result.blob) {
+      activeImageBlob = result.blob;
+      lastGenMeta = {
+        logId: result.logId || crypto.randomUUID(),
+        r2Key: result.r2Key || "",
+        imageUrl: result.imageUrl || "",
+        prompt: compiledContext.remixedOutput || "",
+        contextJson: JSON.stringify(compiledContext),
+        model: compiledContext.metadata.targetModel,
+        w, h,
+      };
+
+      const url = URL.createObjectURL(result.blob);
+      viewportImg.src = url;
+
+      viewportImg.onload = () => {
+        loader.style.display = "none";
+        viewportImg.classList.add("loaded");
+        seedText.textContent = `Seed: ${seed}`;
+        logText.textContent = `Log ID: ${result.logId || "offline"}`;
+        metaActions.style.display = "flex";
+        generateBtn.disabled = false;
+        if (saveGalleryBtn) {
+          saveGalleryBtn.disabled = false;
+          saveGalleryBtn.textContent = "💾 Save to Gallery";
+        }
+      };
+    } else {
+      loader.style.display = "none";
+      placeholder.style.display = "none";
+      generateBtn.disabled = false;
+
+      const errorEl    = document.getElementById("viewport-error") as HTMLDivElement;
+      const errorMsg   = document.getElementById("error-message") as HTMLParagraphElement;
+      const retryBtn   = document.getElementById("error-retry-btn") as HTMLButtonElement;
+      const byopBtn    = document.getElementById("error-byop-btn") as HTMLButtonElement;
+
+      errorMsg.textContent = result.error || "Generation failed.";
+      retryBtn.style.display = result.retryable ? "inline-flex" : "none";
+      byopBtn.style.display  = result.hint === "byop" ? "inline-flex" : "none";
+      errorEl.style.display  = "flex";
+
+      retryBtn.onclick = () => { errorEl.style.display = "none"; placeholder.style.display = "flex"; executeGeneration(); };
+      byopBtn.onclick  = () => window.dispatchEvent(new CustomEvent("open-byop"));
+    }
+  }
+
+  // Save to Gallery (opt-in)
+  saveGalleryBtn?.addEventListener("click", async () => {
+    if (!lastGenMeta || !lastGenMeta.r2Key) {
+      window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "No image to save", type: "error" } }));
+      return;
+    }
+    saveGalleryBtn.disabled = true;
+    saveGalleryBtn.textContent = "Saving...";
+    const res = await saveToGallery({
+      logId: lastGenMeta.logId,
+      promptText: lastGenMeta.prompt,
+      contextJson: lastGenMeta.contextJson,
+      model: lastGenMeta.model,
+      width: lastGenMeta.w,
+      height: lastGenMeta.h,
+      r2Key: lastGenMeta.r2Key,
+      imageUrl: lastGenMeta.imageUrl,
+    });
+    if (res.success) {
+      saveGalleryBtn.textContent = "✓ Saved";
+      window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: "Saved to Gallery!", type: "success" } }));
+    } else {
+      saveGalleryBtn.disabled = false;
+      saveGalleryBtn.textContent = "💾 Save to Gallery";
+      window.dispatchEvent(new CustomEvent("show-toast", { detail: { message: res.error || "Save failed", type: "error" } }));
+    }
+  });
+
+  // Download
+  downloadBtn?.addEventListener("click", () => {
+    if (!activeImageBlob) return;
+    const url = URL.createObjectURL(activeImageBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `petalgen-${Date.now()}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+</script>
